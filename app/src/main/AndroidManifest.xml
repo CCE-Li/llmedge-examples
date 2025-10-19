@@ -29,6 +29,7 @@
         <activity
             android:name=".ImageToTextActivity"
             android:exported="false" />
+            <activity android:name=".LlavaVisionActivity" />
         <activity
             android:name=".MainActivity"
             android:exported="true">

@@ -25,5 +25,9 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnOpenImageToText).setOnClickListener {
             startActivity(Intent(this, ImageToTextActivity::class.java))
         }
+
+        findViewById<Button>(R.id.btnOpenLlavaVision).setOnClickListener {
+            startActivity(Intent(this, LlavaVisionActivity::class.java))
+        }
     }
 }
