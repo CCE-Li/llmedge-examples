@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+	<!-- Allow access to files created in the app's external cache directory -->
+	<external-cache-path name="external_cache" path="." />
+</paths>
