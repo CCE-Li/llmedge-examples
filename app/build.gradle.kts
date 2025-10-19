@@ -42,6 +42,8 @@ dependencies {
 
     // ML Kit Text Recognition required at runtime when using MlKitOcrEngine from the library AAR
     implementation("com.google.mlkit:text-recognition:16.0.0")
+    // ML Kit Image Labeling used by LocalImageDescriber
+    implementation("com.google.mlkit:image-labeling:17.0.7")
     // Note: don't request unavailable coordinates here; rely on text-recognition artifact below.
 
     // Match library deps needed by RAG demo

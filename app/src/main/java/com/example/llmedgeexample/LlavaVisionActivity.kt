@@ -37,6 +37,7 @@ class LlavaVisionActivity : AppCompatActivity() {
     private lateinit var btnPick: Button
     private lateinit var btnTake: Button
     private lateinit var btnRun: Button
+    private lateinit var btnDescribeLocal: Button
     private lateinit var etPrompt: EditText
     private lateinit var tvResult: TextView
     private lateinit var imagePreview: ImageView
@@ -94,6 +95,7 @@ class LlavaVisionActivity : AppCompatActivity() {
         btnPick = findViewById(R.id.btnPickImage)
         btnTake = findViewById(R.id.btnTakePicture)
         btnRun = findViewById(R.id.btnRun)
+        btnDescribeLocal = findViewById(R.id.btnDescribeLocal)
         etPrompt = findViewById(R.id.etPrompt)
         tvResult = findViewById(R.id.tvResult)
         imagePreview = findViewById(R.id.imagePreview)
@@ -109,6 +111,82 @@ class LlavaVisionActivity : AppCompatActivity() {
 
         btnRun.setOnClickListener {
             runVisionQuery()
+        }
+
+        btnDescribeLocal.setOnClickListener {
+            runLocalDescribe()
+        }
+    }
+
+    private fun runLocalDescribe() {
+        val uri = imageUri
+        if (uri == null) {
+            tvResult.text = "Pick or take an image first"
+            return
+        }
+
+        progress.visibility = View.VISIBLE
+        tvResult.text = ""
+
+        val exceptionHandler = CoroutineExceptionHandler { _, ex ->
+            Log.e(TAG, "Unhandled coroutine error", ex)
+            runOnUiThread {
+                progress.visibility = View.GONE
+                tvResult.text = "Error: ${ex.message}"
+            }
+        }
+
+        scope.launch(exceptionHandler) {
+            try {
+                // Prepare a local, downscaled file for analysis
+                val localInput = File.createTempFile("llava_input", ".jpg", cacheDir)
+                try {
+                    val bmp = io.aatricks.llmedge.vision.ImageUtils.imageToBitmap(this@LlavaVisionActivity, io.aatricks.llmedge.vision.ImageSource.UriSource(uri))
+                    val scaled = io.aatricks.llmedge.vision.ImageUtils.preprocessImage(bmp, correctOrientation = true, maxDimension = 1600, enhance = false)
+                    localInput.outputStream().use { out -> scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, out) }
+                } catch (e: Exception) {
+                    contentResolver.openInputStream(uri)?.use { ins ->
+                        localInput.outputStream().use { out -> ins.copyTo(out) }
+                    }
+                }
+
+                // OCR (existing)
+                val ocrEngine = MlKitOcrEngine(this@LlavaVisionActivity)
+                val ocrResult = try {
+                    ocrEngine.extractText(io.aatricks.llmedge.vision.ImageSource.FileSource(localInput), OcrParams())
+                } catch (e: Exception) {
+                    Log.w(TAG, "OCR failed in local describe", e)
+                    null
+                }
+                try { ocrEngine.close() } catch (_: Exception) {}
+
+                // Local description
+                val desc = io.aatricks.llmedge.vision.LocalImageDescriber.describe(
+                    this@LlavaVisionActivity,
+                    io.aatricks.llmedge.vision.ImageSource.FileSource(localInput)
+                )
+
+                runOnUiThread {
+                    progress.visibility = View.GONE
+                    val sb = StringBuilder()
+                    sb.appendLine("Local description: ${desc.summary}")
+                    if (desc.labels.isNotEmpty()) sb.appendLine("Labels: ${desc.labels.joinToString(", ")}")
+                    val size = desc.size
+                    if (size != null) sb.appendLine("Size: ${size.first}x${size.second}")
+                    if (desc.dominantColor != null) sb.appendLine("Dominant color: ${desc.dominantColor}")
+                    if (ocrResult != null && ocrResult.text.isNotBlank()) {
+                        val ocrSnippet = ocrResult.text.take(500)
+                        sb.appendLine("OCR: $ocrSnippet")
+                    }
+                    tvResult.text = sb.toString().trim()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Local describe failed", e)
+                runOnUiThread {
+                    progress.visibility = View.GONE
+                    tvResult.text = "Error: ${e.message}"
+                }
+            }
         }
     }
 
