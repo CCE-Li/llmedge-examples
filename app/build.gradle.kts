@@ -3,6 +3,9 @@ plugins {
     id("org.jetbrains.kotlin.android") version "2.0.0"
 }
 
+// Note: we depend on ML Kit text-recognition at runtime. Avoid referencing
+// coordinates that may not be available in the example app's repositories.
+
 android {
     namespace = "com.example.llmedgeexample"
     compileSdk = 35
@@ -30,9 +33,18 @@ dependencies {
     implementation(files("../../llmedge/build/outputs/aar/llmedge-release.aar"))
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1")
+    // Provides TasksKt.await extension used when awaiting Task<T> from ML Kit
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.10.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("androidx.activity:activity-ktx:1.8.0")
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+
+    // ML Kit Text Recognition required at runtime when using MlKitOcrEngine from the library AAR
+    implementation("com.google.mlkit:text-recognition:16.0.0")
+    // ML Kit Image Labeling used by LocalImageDescriber
+    implementation("com.google.mlkit:image-labeling:17.0.7")
+    // Note: don't request unavailable coordinates here; rely on text-recognition artifact below.
 
     // Match library deps needed by RAG demo
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
