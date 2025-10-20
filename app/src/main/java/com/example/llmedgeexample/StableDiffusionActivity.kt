@@ -35,6 +35,7 @@ class StableDiffusionActivity : AppCompatActivity() {
                 // disable button to avoid concurrent presses which can lead to concurrent native calls
                 generateBtn.isEnabled = false
                 progress.visibility = android.view.View.VISIBLE
+                var localSd: StableDiffusion? = null
                 try {
                     // Ensure model GGUF is downloaded by StableDiffusion.load
                     // and separately ensure the VAE safetensors is present.
@@ -66,7 +67,7 @@ class StableDiffusionActivity : AppCompatActivity() {
                         )
                     }
 
-                    val local = sd ?: try {
+                    localSd = try {
                         StableDiffusion.load(
                             context = this@StableDiffusionActivity,
                             modelId = "Meina/MeinaMix",
@@ -76,7 +77,7 @@ class StableDiffusionActivity : AppCompatActivity() {
                             keepClipOnCpu = true,
                             keepVaeOnCpu = false,
                             vaePath = vaeDownload.file.absolutePath
-                        ).also { sd = it }
+                        )
                     } catch (iae: IllegalArgumentException) {
                         // Common case: the model repo doesn't contain a .gguf model file.
                         iae.printStackTrace()
@@ -93,7 +94,7 @@ class StableDiffusionActivity : AppCompatActivity() {
 
                     // Use a smaller default resolution during initial tests to reduce memory pressure.
                     val bmp: Bitmap = try {
-                        local.txt2img(
+                        localSd.txt2img(
                         StableDiffusion.GenerateParams(
                             prompt = promptInput.text.toString().ifBlank { "a cute pastel anime cat, soft colors, high quality" },
                             steps = 20,
@@ -106,7 +107,7 @@ class StableDiffusionActivity : AppCompatActivity() {
                     } catch (oom: OutOfMemoryError) {
                         // Log and fallback: try an even smaller size
                         oom.printStackTrace()
-                        local.txt2img(
+                        localSd.txt2img(
                             StableDiffusion.GenerateParams(
                                 prompt = promptInput.text.toString().ifBlank { "a cute pastel anime cat, soft colors, high quality" },
                                 steps = 10,
@@ -121,6 +122,7 @@ class StableDiffusionActivity : AppCompatActivity() {
                 } catch (e: Throwable) {
                     e.printStackTrace()
                 } finally {
+                    localSd?.close()
                     progress.visibility = android.view.View.GONE
                     generateBtn.isEnabled = true
                 }
