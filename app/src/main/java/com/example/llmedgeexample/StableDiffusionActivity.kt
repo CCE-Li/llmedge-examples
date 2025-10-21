@@ -71,10 +71,10 @@ class StableDiffusionActivity : AppCompatActivity() {
                         StableDiffusion.load(
                             context = this@StableDiffusionActivity,
                             modelId = "Meina/MeinaMix",
-                            filename = null,
+                            filename = "MeinaPastel - baked VAE.safetensors",
                             nThreads = Runtime.getRuntime().availableProcessors(),
-                            offloadToCpu = true,
-                            keepClipOnCpu = true,
+                            offloadToCpu = false,
+                            keepClipOnCpu = false,
                             keepVaeOnCpu = false,
                             vaePath = vaeDownload.file.absolutePath
                         )
@@ -93,6 +93,8 @@ class StableDiffusionActivity : AppCompatActivity() {
                     }
 
                     // Use a smaller default resolution during initial tests to reduce memory pressure.
+                    // Generate a random seed for each run to produce varied outputs.
+                    val seed: Long = System.currentTimeMillis()
                     val bmp: Bitmap = try {
                         localSd.txt2img(
                         StableDiffusion.GenerateParams(
@@ -101,7 +103,7 @@ class StableDiffusionActivity : AppCompatActivity() {
                             cfgScale = 7.0f,
                             width = 128,
                             height = 128,
-                            seed = 42L
+                            seed = seed
                         )
                         )
                     } catch (oom: OutOfMemoryError) {
@@ -114,7 +116,7 @@ class StableDiffusionActivity : AppCompatActivity() {
                                 cfgScale = 7.0f,
                                 width = 64,
                                 height = 64,
-                                seed = 42L
+                                seed = seed
                             )
                         )
                     }
