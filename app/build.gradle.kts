@@ -11,7 +11,7 @@ android {
     compileSdk = 35
     defaultConfig {
     applicationId = "com.example.llmedgeexample"
-        minSdk = 26
+        minSdk = 30
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
@@ -29,8 +29,8 @@ android {
 }
 
 dependencies {
-    // Use the freshly built AAR from the sibling library module
-    implementation(files("../../llmedge/build/outputs/aar/llmedge-release.aar"))
+    // Use the bundled AAR placed in this app's libs/ directory (avoids AGP artifact extraction issues)
+    implementation(files("libs/llmedge-release.aar"))
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1")
     // Provides TasksKt.await extension used when awaiting Task<T> from ML Kit

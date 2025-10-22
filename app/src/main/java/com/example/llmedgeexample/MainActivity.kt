@@ -29,5 +29,9 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnOpenLlavaVision).setOnClickListener {
             startActivity(Intent(this, LlavaVisionActivity::class.java))
         }
+
+        findViewById<Button>(R.id.btnOpenStableDiffusion).setOnClickListener {
+            startActivity(Intent(this, StableDiffusionActivity::class.java))
+        }
     }
 }
