@@ -121,10 +121,49 @@ class VideoGenerationActivity : AppCompatActivity() {
         if (cached != null) return cached
 
         val loaded = try {
-            StableDiffusion.load(
+            // Download all three model files explicitly (same as HeadlessVideoTestActivity)
+            val modelFile = io.aatricks.llmedge.huggingface.HuggingFaceHub.ensureRepoFileOnDisk(
                 context = applicationContext,
                 modelId = WAN_MODEL_ID,
+                revision = "main",
                 filename = WAN_MODEL_FILENAME,
+                allowedExtensions = listOf(".safetensors", ".gguf"),
+                token = null,
+                forceDownload = false,
+                preferSystemDownloader = true,
+                onProgress = null
+            )
+            
+            val vaeFile = io.aatricks.llmedge.huggingface.HuggingFaceHub.ensureRepoFileOnDisk(
+                context = applicationContext,
+                modelId = WAN_VAE_ID,
+                revision = "main",
+                filename = WAN_VAE_FILENAME,
+                allowedExtensions = listOf(".safetensors"),
+                token = null,
+                forceDownload = false,
+                preferSystemDownloader = true,
+                onProgress = null
+            )
+            
+            val t5xxlFile = io.aatricks.llmedge.huggingface.HuggingFaceHub.ensureRepoFileOnDisk(
+                context = applicationContext,
+                modelId = WAN_T5XXL_ID,
+                revision = "main",
+                filename = WAN_T5XXL_FILENAME,
+                allowedExtensions = listOf(".gguf", ".safetensors"),
+                token = null,
+                forceDownload = false,
+                preferSystemDownloader = true,
+                onProgress = null
+            )
+            
+            // Load all three models together using file paths
+            StableDiffusion.load(
+                context = applicationContext,
+                modelPath = modelFile.file.absolutePath,
+                vaePath = vaeFile.file.absolutePath,
+                t5xxlPath = t5xxlFile.file.absolutePath,
                 nThreads = Runtime.getRuntime().availableProcessors(),
                 offloadToCpu = true,
                 keepClipOnCpu = true,
@@ -173,8 +212,10 @@ class VideoGenerationActivity : AppCompatActivity() {
         // See: https://github.com/leejet/stable-diffusion.cpp/blob/master/docs/wan.md
         private const val WAN_MODEL_ID = "Comfy-Org/Wan_2.1_ComfyUI_repackaged"
         private const val WAN_MODEL_FILENAME = "wan2.1_t2v_1.3B_fp16.safetensors"
+        private const val WAN_VAE_ID = "Comfy-Org/Wan_2.1_ComfyUI_repackaged"
         private const val WAN_VAE_FILENAME = "wan_2.1_vae.safetensors"
-        private const val WAN_T5XXL_FILENAME = "umt5_xxl_fp16.safetensors"
-        private const val DEFAULT_PROMPT = "a cat walking through neon city streets, cinematic lighting"
+        private const val WAN_T5XXL_ID = "city96/umt5-xxl-encoder-gguf"
+        private const val WAN_T5XXL_FILENAME = "umt5-xxl-encoder-Q3_K_S.gguf"
+        private const val DEFAULT_PROMPT = "A dog running in the park"
     }
 }
