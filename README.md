@@ -1,109 +1,431 @@
-# llmedge Example App — demos, how they work, and how to run them
+# llmedge Examples
 
-This small Android example app demonstrates how the `llmedge` library is used in real demos bundled with the repo. The app is intentionally compact so you can quickly inspect how to load models (local or from Hugging Face), run on-device RAG, and wire a Stable Diffusion txt2img flow.
+Comprehensive demonstration applications for the llmedge Android library, showcasing on-device language model inference, RAG pipelines, image generation, and video synthesis capabilities.
 
-Find the main `llmedge` library in the parent repo: https://github.com/Aatricks/llmedge
+**Main Library Repository**: https://github.com/Aatricks/llmedge
 
-## Demos included (activity names)
+## Overview
 
-- Local Asset Demo — `LocalAssetDemoActivity.kt`
-  - Copies a GGUF bundled in `app/src/main/assets/` into app-private storage and loads it via `SmolLM.load`.
-  - Demonstrates blocking load, simple inference, and streaming output.
+This example application provides production-ready demonstrations of llmedge's core features. Each activity is designed to illustrate best practices for model loading, memory management, and efficient on-device inference.
 
-- Hugging Face Demo — `HuggingFaceDemoActivity.kt`
-  - Downloads a GGUF from the Hugging Face hub (or reuses a cached copy) and loads it via `SmolLM.loadFromHuggingFace`.
-  - Shows download progress callbacks and the cache layout under app `filesDir`.
+## Included Demonstrations
 
-- Retrieval-Augmented Generation (RAG) Demo — `RagActivity.kt`
-  - Demonstrates indexing and retrieval using provided embeddings (bundled under `assets/embeddings/`) plus final answer generation with `SmolLM`.
+### Language Model Inference
 
-- OCR and Vision capable LLM Demo — `ImageToTextActivity.kt`, `LlavaVisionActivity.kt`
-  - Demonstrates loading a vision-capable LLM and performing OCR and description on images using the model's vision capabilities or Google ML Kit.
-  - Shows how to prepare image inputs and handle multimodal outputs.
+**Local Asset Demo** (`LocalAssetDemoActivity.kt`)
+- Demonstrates loading GGUF models bundled within the APK
+- Illustrates asset extraction to app-private storage
+- Shows both blocking and streaming inference patterns
+- Suitable for offline-first applications
 
-- Stable Diffusion (txt2img) Demo — `StableDiffusionActivity.kt`
-  - Optional heavy demo that downloads required VAE/aux assets when missing and runs a small `txt2img` workload via the `SmolSD` wrapper.
-  - Exposes runtime options to offload large tensors to CPU to avoid native heap OOMs.
+**Hugging Face Demo** (`HuggingFaceDemoActivity.kt`)
+- Automated model download from Hugging Face Hub
+- Progress monitoring and cache management
+- Demonstrates proper error handling for network operations
+- Shows model reuse across application sessions
 
-## Quick prerequisites
+### Retrieval-Augmented Generation
 
-- Android SDK + NDK r27+ (NDK r27 used during development)
+**RAG Demo** (`RagActivity.kt`)
+- Complete on-device RAG pipeline implementation
+- Document indexing with ONNX embeddings
+- Vector similarity search and context retrieval
+- Integration with SmolLM for answer generation
+- Demonstrates PDF parsing and text chunking strategies
+
+### Vision and Multimodal Processing
+
+**Image Text Extraction** (`ImageToTextActivity.kt`)
+- Google ML Kit OCR integration
+- Batch image processing capabilities
+- Error handling for unsupported image formats
+- Demonstrates preprocessing for vision models
+
+**Vision Model Demo** (`LlavaVisionActivity.kt`)
+- Vision-capable language model integration
+- Image-to-text description generation
+- Multimodal input preparation
+- Demonstrates vision model inference patterns
+
+### Generative Media
+
+**Image Generation** (`StableDiffusionActivity.kt`)
+- Text-to-image synthesis using Stable Diffusion
+- Memory-aware configuration options
+- Progressive generation with cancellation support
+- Demonstrates VAE loading and tensor offloading strategies
+
+**Video Generation** (`VideoGenerationActivity.kt`)
+- Text-to-video synthesis using Wan models
+- Multi-file model loading (main + VAE + T5XXL)
+- Device capability detection (12GB+ RAM required)
+- Frame-by-frame progress monitoring
+- Demonstrates proper resource cleanup
+
+**Headless Video Testing** (`HeadlessVideoTestActivity.kt`)
+- Automated E2E testing infrastructure
+- Programmatic model validation
+- Performance benchmarking utilities
+- Command-line invocation support
+
+## System Requirements
+
+### Minimum Requirements
+- Android SDK 21+ (Lollipop)
+- 3GB RAM for basic LLM inference
+- 500MB free storage for model caching
+
+### Recommended Configuration
+- Android 11+ (API 30) for Vulkan acceleration
+- 8GB RAM for Stable Diffusion
+- 12GB+ RAM for video generation (Wan models)
+- 5GB free storage for video model pipeline
+
+### Development Environment
+- Android SDK with NDK r27+
 - CMake 3.22+
-- Java 11+
-- Gradle (use the included Gradle wrapper in this repo)
-- Optional: a modern Android device (Android 11 / API 30+) if you want to test Vulkan acceleration
+- Java 17+
+- Gradle 8.0+ (wrapper included)
 
-If you plan to run the Stable Diffusion demo on-device, prefer a device with ample RAM and consider enabling CPU offloads in the demo settings.
+## Building the Application
 
-## Build & install (recommended flow)
+### Standard Build Process
 
-From the repository root:
+From the repository root directory:
 
-1) Build the `llmedge` AAR and copy it into the example app:
-
+1. Build the llmedge library:
 ```bash
 ./gradlew :llmedge:assembleRelease
-cp -f llmedge/build/outputs/aar/llmedge-release.aar llmedge-examples/app/libs/llmedge-release.aar
 ```
 
-2) Build and install the example app (run from `llmedge-examples`):
-
+2. Copy the AAR to the examples project:
 ```bash
+cp llmedge/build/outputs/aar/llmedge-release.aar llmedge-examples/app/libs/llmedge-release.aar
+```
+
+3. Build the example application:
+```bash
+cd llmedge-examples
 ./gradlew :app:assembleDebug
+```
+
+4. Install to device:
+```bash
 ./gradlew :app:installDebug
 ```
 
-3) Launch the app on your device and choose a demo from the launcher.
+### Vulkan-Enabled Build
 
-Note: If you modify native build flags (e.g. enabling Vulkan) rebuild the AAR before reinstalling the example app so the APK includes matching native libraries.
+For GPU-accelerated inference on Android 11+ devices:
 
-## Where to put models and assets
+```bash
+./gradlew :llmedge:assembleRelease \
+  -Pandroid.jniCmakeArgs="-DGGML_VULKAN=ON -DSD_VULKAN=ON"
+  
+cp llmedge/build/outputs/aar/llmedge-release.aar llmedge-examples/app/libs/llmedge-release.aar
 
-- Bundled local GGUF models: place your GGUF (like [smolm2-360M](https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct-GGUF)) in `app/src/main/assets/YourModel.gguf` before building the APK. The Local Asset demo copies that file into the app's private storage on first run and then loads it from there.
+cd llmedge-examples
+./gradlew :app:assembleDebug :app:installDebug
+```
 
-- Embeddings & ONNX for RAG: the RAG demo expects small example embeddings and ONNX files under `app/src/main/assets/embeddings/`. The demo will index and query these at runtime.
+**Note**: Vulkan builds require devices with Vulkan 1.2 support (Android 11+).
 
-- Hugging Face downloads (runtime cache): the Hugging Face demo downloads models into the app private cache under `filesDir/hf-models/<repo>/<revision>/` and will reuse cached copies on subsequent runs.
+## Asset Configuration
 
-## API & runtime tips
+### Bundled GGUF Models
 
-- Loading models (examples):
-  - SmolLM.load(filePath, params)
-  - SmolLM.loadFromHuggingFace(repo, revision, token?, params)
+Place small GGUF models in `app/src/main/assets/` for offline-first demos:
 
-- Check Vulkan availability at runtime with `SmolLM.isVulkanEnabled()` before enabling Vulkan-specific options in your UI.
+```
+app/src/main/assets/
+              └── models/
+                  └── smolm2-360M-instruct.gguf
+```
 
-- RAG flow: the example shows a minimal pipeline — index documents (embeddings), run a nearest-neighbor search locally, then pass relevant snippets to `SmolLM` to generate an answer. The RAG demo is intentionally small; for production you will want more robust chunking, ranking, and prompt engineering.
+Recommended models for bundling:
+- SmolLM2-360M-Instruct (~200MB)
+- Qwen2-0.5B-Instruct (~300MB)
+- TinyLlama-1.1B (~600MB)
 
-## Stable Diffusion notes
+### RAG Embeddings
 
-- The Stable Diffusion demo will download required auxiliary assets (VAE, etc.) if missing; downloads are cached under the app's files directory.
-- Runtime options exposed in the demo (see `StableDiffusionActivity.kt`):
-  - `offloadToCpu` — offload large tensors to host memory to reduce native heap usage.
-  - `keepClipOnCpu` — keep CLIP on CPU to reduce GPU memory usage.
-  - `keepVaeOnCpu` — keep the VAE on CPU if required to fit memory constraints.
+The RAG demo requires ONNX embedding models:
 
-- If you hit OOMs during generation: lower `width`/`height`, reduce `steps`, use CPU offloads, or use a smaller model.
+```
+app/src/main/assets/
+              └── embeddings/
+                  └── all-minilm-l6-v2/
+                      ├── model.onnx
+                      └── tokenizer.json
+```
 
-## Vulkan and performance
+Download from: `sentence-transformers/all-MiniLM-L6-v2` on Hugging Face
 
-- To build with Vulkan support enable the proper cmake flags when assembling the AAR (native CMake flags used in the library build): `-DSD_VULKAN=ON -DGGML_VULKAN=ON`.
-- Runtime checks:
-  - Device: Android 11+ (API 30) with Vulkan 1.2-capable GPU.
-  - Call `SmolLM.isVulkanEnabled()` from Kotlin to verify the native backend reports Vulkan availability.
-  - Inspect `logcat` for `SmolSD` / `SmolLM` messages and ensure there are no "Failed to initialize Vulkan backend" errors.
+### Runtime Model Cache
+
+Models downloaded via Hugging Face are cached at:
+```
+<app_private_dir>/files/hf-models/<repo>/<revision>/<filename>
+```
+
+Cache persists across app restarts and is reused automatically.
+
+## Usage Examples
+
+### Basic LLM Inference
+
+```kotlin
+val smol = SmolLM()
+
+CoroutineScope(Dispatchers.IO).launch {
+    smol.loadFromHuggingFace(
+        context = context,
+        modelId = "unsloth/Qwen3-0.6B-GGUF",
+        filename = "Qwen3-0.6B-Q4_K_M.gguf"
+    )
+    
+    val response = smol.getResponse("Explain quantum computing concisely.")
+    withContext(Dispatchers.Main) {
+        textView.text = response
+    }
+    
+    smol.close()
+}
+```
+
+### RAG Pipeline
+
+```kotlin
+val smol = SmolLM()
+val rag = RAGEngine(context, smol)
+
+CoroutineScope(Dispatchers.IO).launch {
+    rag.init()
+    val chunks = rag.indexPdf(pdfUri)
+    val answer = rag.ask("What are the main conclusions?")
+    
+    withContext(Dispatchers.Main) {
+        resultView.text = answer
+    }
+}
+```
+
+### Image Generation
+
+```kotlin
+val sd = StableDiffusion.load(
+    context = this,
+    modelId = "Meina/MeinaMix",
+    filename = "MeinaPastel-v6-baked-vae.safetensors",
+    offloadToCpu = true
+)
+
+val bitmap = sd.txt2img(
+    StableDiffusion.GenerateParams(
+        prompt = "serene mountain landscape, sunset",
+        width = 512,
+        height = 512,
+        steps = 20,
+        cfgScale = 7.0f
+    )
+)
+
+imageView.setImageBitmap(bitmap)
+sd.close()
+```
+
+### Video Generation
+
+```kotlin
+// Check device compatibility
+val activityManager = getSystemService(ACTIVITY_SERVICE) as ActivityManager
+val memInfo = ActivityManager.MemoryInfo()
+activityManager.getMemoryInfo(memInfo)
+val totalRamGB = memInfo.totalMem / (1024.0 * 1024.0 * 1024.0)
+
+if (totalRamGB < 12.0) {
+    showError("Video generation requires 12GB+ RAM")
+    return
+}
+
+// Download all three required components
+val modelFile = HuggingFaceHub.ensureRepoFileOnDisk(
+    context, "Comfy-Org/Wan_2.1_ComfyUI_repackaged", "main",
+    "wan2.1_t2v_1.3B_fp16.safetensors"
+)
+
+val vaeFile = HuggingFaceHub.ensureRepoFileOnDisk(
+    context, "Comfy-Org/Wan_2.1_ComfyUI_repackaged", "main",
+    "wan_2.1_vae.safetensors"
+)
+
+val t5xxlFile = HuggingFaceHub.ensureRepoFileOnDisk(
+    context, "city96/umt5-xxl-encoder-gguf", "main",
+    "umt5-xxl-encoder-Q3_K_S.gguf"
+)
+
+// Load with explicit paths
+val sd = StableDiffusion.load(
+    context = this,
+    modelPath = modelFile.file.absolutePath,
+    vaePath = vaeFile.file.absolutePath,
+    t5xxlPath = t5xxlFile.file.absolutePath,
+    offloadToCpu = true,
+    keepClipOnCpu = true,
+    keepVaeOnCpu = true
+)
+
+val frames = sd.txt2vid(
+    StableDiffusion.VideoGenerateParams(
+        prompt = "cat walking through garden",
+        videoFrames = 8,
+        width = 256,
+        height = 256,
+        steps = 20
+    )
+)
+
+sd.close()
+```
+
+## Performance Optimization
+
+### Memory Management
+
+**Monitor Memory Usage**:
+```kotlin
+val snapshot = MemoryMetrics.snapshot(context)
+Log.d("Memory", "Native heap: ${snapshot.nativePssKb / 1024}MB")
+```
+
+**Optimization Strategies**:
+- Use quantized models (Q4_K_M) for lower memory footprint
+- Enable CPU offloading for large models
+- Close model instances when not in use
+- Process images/video in batches with intermediate cleanup
+
+### Thread Configuration
+
+```kotlin
+val params = SmolLM.InferenceParams(
+    numThreads = Runtime.getRuntime().availableProcessors(),
+    contextSize = 2048  // Adjust based on device RAM
+)
+```
+
+### Vulkan Acceleration
+
+Verify Vulkan availability:
+```kotlin
+if (SmolLM.isVulkanEnabled()) {
+    Log.i("Performance", "Vulkan backend active")
+} else {
+    Log.w("Performance", "Falling back to CPU backend")
+}
+```
+
+Check logcat for initialization:
+```bash
+adb logcat -s SmolLM:* SmolSD:* | grep -i vulkan
+```
 
 ## Troubleshooting
 
-- If a model fails to load or you see native crashes, rebuild the AAR and ensure the native ABIs in the AAR match the device ABI.
-- Verify runtime permissions for storage/network if downloads fail in the Hugging Face demo.
-- For Stable Diffusion, try smaller image sizes or enable offloads if you hit memory errors.
+### Model Loading Failures
 
-## Notes
+**Symptoms**: `FileNotFoundException`, `IllegalStateException` during load
 
-- Hugging Face downloads are cached under `filesDir/hf-models/<repo>/<revision>/` for reuse.
-- Tune `numThreads` in `InferenceParams` for your device to balance latency vs throughput.
+**Solutions**:
+- Verify model file exists in expected location
+- Check available storage space
+- Ensure network connectivity for Hugging Face downloads
+- Validate model file integrity (not corrupted)
 
----
+### Out of Memory Errors
 
-If you'd like, I can also add a short code snippet showing exact Kotlin calls used by each demo or update the in-app strings/layouts to make the demos more discoverable. Just tell me which demo you want more docs for.
+**Symptoms**: App crashes with OOM during inference or generation
+
+**Solutions**:
+- Use smaller models or quantized variants
+- Reduce image/video resolution
+- Enable CPU offloading: `offloadToCpu = true`
+- Lower context window size
+- Close unused model instances
+
+### Slow Inference Performance
+
+**Symptoms**: Generation takes excessive time per token/frame
+
+**Solutions**:
+- Use quantized models (Q4_K_M, Q3_K_S)
+- Reduce inference steps (15-20 is usually sufficient)
+- Enable Vulkan on compatible devices
+- Adjust thread count to match device cores
+- Use smaller resolutions for media generation
+
+### Video Generation Failures
+
+**Symptoms**: Crashes or errors when loading Wan models
+
+**Solutions**:
+- Verify device has 12GB+ RAM
+- Ensure all three files downloaded (main + VAE + T5XXL)
+- Use explicit file paths (not modelId shorthand)
+- Check stable-diffusion.cpp logs in logcat
+- Verify sufficient storage for 6GB+ model files
+
+### Native Library Issues
+
+**Symptoms**: `UnsatisfiedLinkError`, native crashes
+
+**Solutions**:
+- Rebuild AAR and reinstall app
+- Verify NDK version matches (r27+)
+- Check device ABI compatibility
+- Inspect logcat for native stack traces
+- Clean build: `./gradlew clean`
+
+## Testing Infrastructure
+
+### Headless E2E Testing
+
+Run automated video generation tests:
+
+```bash
+adb shell am start -n com.example.llmedgeexample/.HeadlessVideoTestActivity
+```
+
+Monitor test execution:
+```bash
+adb logcat -s VideoE2E:*
+```
+
+Test results are logged to logcat with detailed timing and validation metrics.
+
+## Architecture Notes
+
+### Memory Architecture
+- Native models allocated via JNI in native heap
+- Dalvik heap used only for Java objects and bitmaps
+- Large file downloads use system DownloadManager
+- Tensor operations execute in native memory space
+
+### Threading Model
+- All model operations run on background threads (Dispatchers.IO)
+- UI updates dispatched to Main thread
+- Blocking calls avoided on UI thread
+- Coroutines used for structured concurrency
+
+### Resource Lifecycle
+- Models implement `AutoCloseable` for automatic cleanup
+- Native resources freed via `close()` method
+- File handles managed with try-with-resources pattern
+- Memory mapped files used for large model loading
+
+## License
+
+Apache 2.0 - See LICENSE file for details
+
+## Contributing
+
+Contributions welcome. Please review the main repository's contributing guidelines before submitting pull requests.
