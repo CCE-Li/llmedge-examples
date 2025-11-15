@@ -40,15 +40,18 @@ class HeadlessVideoTestActivity : Activity() {
         private const val DEFAULT_CFG_SCALE = 7.0f
         private const val DEFAULT_SEED = 42L
         
-        // Model config - Using official Comfy-Org repackaged models
-        // NOTE: fp16 models require ~14GB RAM (10.8GB T5XXL + 2.7GB model + 0.14GB VAE)
-        // Devices with <8GB RAM will OOM. For production, use quantized GGUF models.
-        // See: https://github.com/leejet/stable-diffusion.cpp/blob/master/docs/wan.md
+        // Model config - Mixed precision (quantized encoder + fp16 main model)
+        // GGUF main models (samuelchristlie) lack SD version metadata → initialization fails
+        // Must use safetensors for main model until GGUF metadata issue is resolved
+        // RAM: ~8.75GB (5.9GB T5XXL Q3_K_S + 2.7GB model fp16 + 0.14GB VAE)
+        // REQUIRES: Device with 12GB+ RAM (Galaxy S23 Ultra, Pixel 8 Pro, etc.)
+        // See E2E-TEST-FINDINGS.md for full analysis
         private const val WAN_MODEL_ID = "Comfy-Org/Wan_2.1_ComfyUI_repackaged"
         private const val WAN_MODEL_FILENAME = "wan2.1_t2v_1.3B_fp16.safetensors"
+        private const val WAN_VAE_ID = "Comfy-Org/Wan_2.1_ComfyUI_repackaged"
         private const val WAN_VAE_FILENAME = "wan_2.1_vae.safetensors"
-        private const val WAN_T5XXL_ID = "Comfy-Org/Wan_2.1_ComfyUI_repackaged"
-        private const val WAN_T5XXL_FILENAME = "umt5_xxl_fp16.safetensors"
+        private const val WAN_T5XXL_ID = "city96/umt5-xxl-encoder-gguf"
+        private const val WAN_T5XXL_FILENAME = "umt5-xxl-encoder-Q3_K_S.gguf"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -107,15 +110,28 @@ class HeadlessVideoTestActivity : Activity() {
         var sd: StableDiffusion? = null
         
         try {
-            // 1. Load model
             android.util.Log.e(TAG, "Loading model: $WAN_MODEL_ID")
             android.util.Log.e(TAG, "Filename: $WAN_MODEL_FILENAME")
             
-            // Load VAE first
+            // Load main model file first
+            android.util.Log.e(TAG, "Loading main model: $WAN_MODEL_FILENAME")
+            val modelFile = io.aatricks.llmedge.huggingface.HuggingFaceHub.ensureRepoFileOnDisk(
+                context = applicationContext,
+                modelId = WAN_MODEL_ID,
+                revision = "main",
+                filename = WAN_MODEL_FILENAME,
+                allowedExtensions = listOf(".safetensors", ".gguf"),
+                token = null,
+                forceDownload = false,
+                preferSystemDownloader = true,
+                onProgress = null
+            )
+            
+            // Load VAE
             android.util.Log.e(TAG, "Loading VAE: $WAN_VAE_FILENAME")
             val vaeFile = io.aatricks.llmedge.huggingface.HuggingFaceHub.ensureRepoFileOnDisk(
                 context = applicationContext,
-                modelId = WAN_MODEL_ID,
+                modelId = WAN_VAE_ID,
                 revision = "main",
                 filename = WAN_VAE_FILENAME,
                 allowedExtensions = listOf(".safetensors"),
@@ -139,10 +155,11 @@ class HeadlessVideoTestActivity : Activity() {
                 onProgress = null
             )
             
+            // Load all three models together using file paths
+            android.util.Log.e(TAG, "Initializing Stable Diffusion context...")
             sd = StableDiffusion.load(
                 context = applicationContext,
-                modelId = WAN_MODEL_ID,
-                filename = WAN_MODEL_FILENAME,
+                modelPath = modelFile.file.absolutePath,
                 vaePath = vaeFile.file.absolutePath,
                 t5xxlPath = t5xxlFile.file.absolutePath,
                 nThreads = Runtime.getRuntime().availableProcessors(),
