@@ -34,6 +34,14 @@
             android:name=".StableDiffusionActivity"
             android:exported="false" />
         <activity
+            android:name=".VideoGenerationActivity"
+            android:exported="false" />
+        <activity
+            android:name=".HeadlessVideoTestActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:excludeFromRecents="true" />
+        <activity
             android:name=".MainActivity"
             android:exported="true">
             <intent-filter>

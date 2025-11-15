@@ -12,6 +12,7 @@ import io.aatricks.llmedge.StableDiffusion
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import io.aatricks.llmedge.huggingface.HuggingFaceHub
 
 class StableDiffusionActivity : AppCompatActivity() {
     private lateinit var imageView: ImageView
@@ -37,6 +38,17 @@ class StableDiffusionActivity : AppCompatActivity() {
                 progress.visibility = android.view.View.VISIBLE
                 var localSd: StableDiffusion? = null
                 try {
+                    // Optional: show how to load Wan model via Hugging Face with fallback behavior
+                    // NOTE: This will attempt to download large encoder models. Use with caution.
+                    // Example (commented by default):
+                    // val sdWan = StableDiffusion.loadFromHuggingFace(
+                    //     context = this@StableDiffusionActivity,
+                    //     modelId = "wan/Wan2.1-T2V-1.3B",
+                    //     nThreads = 2,
+                    //     preferSystemDownloader = false,
+                    //     onProgress = { name, downloaded, total -> /* show progress */ }
+                    // )
+
                     // Ensure model GGUF is downloaded by StableDiffusion.load
                     // and separately ensure the VAE safetensors is present.
                     // Use the system downloader (DownloadManager) for large files to avoid allocating buffers

@@ -2,4 +2,13 @@
 <resources>
     <string name="app_name">llmedge Example</string>
     <string name="image_to_text_demo">Image → Text (Vision OCR)</string>
+    <string name="video_status_generation_running">Generation already running</string>
+    <string name="video_status_loading_model">Preparing Wan model…</string>
+    <string name="video_status_generating">Generating frames…</string>
+    <string name="video_status_progress_format">Frame %1$d/%2$d · Step %3$d/%4$d</string>
+    <string name="video_status_complete">Generated %1$d frames</string>
+    <string name="video_status_cancelled">Generation cancelled</string>
+    <string name="video_status_failed">Video generation failed: %1$s</string>
+    <string name="video_status_metrics_template">Frames: %1$d\nSpeed: %2$s fps\nTotal time: %3$s s\nPeak native memory: %4$d MB</string>
+    <string name="video_status_metrics_pending">Metrics pending… run a generation first.</string>
 </resources>

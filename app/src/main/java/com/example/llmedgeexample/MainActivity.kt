@@ -33,5 +33,9 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnOpenStableDiffusion).setOnClickListener {
             startActivity(Intent(this, StableDiffusionActivity::class.java))
         }
+
+        findViewById<Button>(R.id.btnOpenVideoGeneration).setOnClickListener {
+            startActivity(Intent(this, VideoGenerationActivity::class.java))
+        }
     }
 }

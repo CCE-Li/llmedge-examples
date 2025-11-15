@@ -59,5 +59,12 @@
             android:layout_marginTop="12dp"
             android:text="Stable Diffusion (Vulkan)" />
 
+        <Button
+            android:id="@+id/btnOpenVideoGeneration"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="Text → Video (Wan)" />
+
     </LinearLayout>
 </ScrollView>
