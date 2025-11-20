@@ -67,7 +67,6 @@ class VideoGenerationActivity : AppCompatActivity() {
                 // Aggressive memory management before loading
                 prepareMemoryForLoading()
 
-                val model = ensureModelLoaded()
                 val prompt = promptInput.text.toString().ifBlank { DEFAULT_PROMPT }
                 updateProgressUI(0, getString(R.string.video_status_generating))
 
@@ -80,6 +79,17 @@ class VideoGenerationActivity : AppCompatActivity() {
                     cfgScale = 7.0f,
                 )
 
+                // Use sequential generation to save memory
+                val frames = VideoModelManager.generateVideoSequentially(
+                    context = applicationContext,
+                    params = params
+                ) { phase, current, total ->
+                    val status = if (total > 0) "$phase ($current/$total)" else phase
+                    updateProgressUI(0, status)
+                }
+
+                /*
+                val model = ensureModelLoaded()
                 val frames = model.txt2vid(params) { step, totalSteps, currentFrame, totalFrames, _ ->
                     val percent = ((currentFrame.toFloat() / totalFrames.toFloat()) * 100f).toInt().coerceIn(0, 100)
                     val status = getString(
@@ -91,6 +101,7 @@ class VideoGenerationActivity : AppCompatActivity() {
                     )
                     updateProgressUI(percent, status)
                 }
+                */
 
                 if (frames.isNotEmpty()) {
                     withContext(Dispatchers.Main) {
@@ -98,7 +109,10 @@ class VideoGenerationActivity : AppCompatActivity() {
                     }
                 }
 
-                val metrics = model.getLastGenerationMetrics()
+                // Metrics are not directly available from generateVideoSequentially yet
+                // We can retrieve them from the cached model if it's still loaded, or just show success
+                val model = VideoModelManager.getCachedModelOrNull()
+                val metrics = model?.getLastGenerationMetrics()
                 withContext(Dispatchers.Main) {
                     metricsLabel.text = metrics?.let {
                         getString(
@@ -144,7 +158,7 @@ class VideoGenerationActivity : AppCompatActivity() {
         System.gc()
 
         // Trim memory caches
-        onTrimMemory(android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW)
+        // onTrimMemory(android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW)
 
         // Log memory state
         val runtime = Runtime.getRuntime()

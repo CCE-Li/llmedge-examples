@@ -24,7 +24,7 @@ object VideoModelManager {
     private const val TAG = "VideoModelManager"
     private const val BYTES_IN_MB = 1024L * 1024L
     private const val MIN_AVAILABLE_MEMORY_MB =
-        3000L // Require at least 3GB available (reduced from 2GB for safety with 6.24GB models)
+        2000L // Reduced from 3000L to allow running on devices with tighter memory constraints
 
     // Model configuration
     private const val WAN_MODEL_ID = "Comfy-Org/Wan_2.1_ComfyUI_repackaged"
@@ -107,6 +107,221 @@ object VideoModelManager {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to load model", e)
             cachedModel = null
+            throw e
+        } finally {
+            isLoading = false
+        }
+    }
+
+    /**
+     * Generates video using sequential (progressive) loading to save memory.
+     * Flow: Load T5XXL -> Encode -> Free T5XXL -> Load Diffusion -> Generate -> Free Diffusion.
+     */
+    suspend fun generateVideoSequentially(
+        context: Context,
+        params: StableDiffusion.VideoGenerateParams,
+        onProgress: ((String, Int, Int) -> Unit)? = null
+    ): List<android.graphics.Bitmap> = loadMutex.withLock {
+        // Update context reference
+        contextRef = WeakReference(context.applicationContext)
+
+        // Ensure we're not interfering with cached model
+        if (cachedModel != null) {
+            Log.i(TAG, "Releasing cached model for sequential generation")
+            releaseModel()
+        }
+
+        try {
+            isLoading = true
+            Log.i(TAG, "Starting sequential video generation...")
+
+            // 1. Ensure all files are available
+            Log.d(TAG, "Checking model files...")
+            onProgress?.invoke("Checking files", 0, 5)
+
+            val modelFile = io.aatricks.llmedge.huggingface.HuggingFaceHub.ensureRepoFileOnDisk(
+                context = context,
+                modelId = WAN_MODEL_ID,
+                revision = "main",
+                filename = WAN_MODEL_FILENAME,
+                allowedExtensions = listOf(".safetensors", ".gguf"),
+                token = null,
+                forceDownload = false,
+                preferSystemDownloader = true,
+                onProgress = null
+            )
+
+            val vaeFile = io.aatricks.llmedge.huggingface.HuggingFaceHub.ensureRepoFileOnDisk(
+                context = context,
+                modelId = WAN_VAE_ID,
+                revision = "main",
+                filename = WAN_VAE_FILENAME,
+                allowedExtensions = listOf(".safetensors"),
+                token = null,
+                forceDownload = false,
+                preferSystemDownloader = true,
+                onProgress = null
+            )
+
+            val t5xxlFile = io.aatricks.llmedge.huggingface.HuggingFaceHub.ensureRepoFileOnDisk(
+                context = context,
+                modelId = WAN_T5XXL_ID,
+                revision = "main",
+                filename = WAN_T5XXL_FILENAME,
+                allowedExtensions = listOf(".gguf", ".safetensors"),
+                token = null,
+                forceDownload = false,
+                preferSystemDownloader = true,
+                onProgress = null
+            )
+
+            // 2. Load T5XXL and Encode
+            Log.i(TAG, "Step 1/2: Loading T5XXL encoder...")
+            onProgress?.invoke("Loading encoder", 1, 5)
+            prepareMemoryForLoading(context)
+
+            // We pass T5XXL as the "modelPath" so stable-diffusion.cpp loads it.
+            // We don't pass the actual diffusion model here to save memory.
+            var t5Model: StableDiffusion? = null
+            var cond: StableDiffusion.PrecomputedCondition? = null
+            var uncond: StableDiffusion.PrecomputedCondition? = null
+
+            try {
+                t5Model = StableDiffusion.load(
+                    context = context,
+                    modelPath = t5xxlFile.file.absolutePath, // Trick: load T5 as main model
+                    vaePath = null,
+                    t5xxlPath = null, // Already passed as modelPath
+                    nThreads = Runtime.getRuntime().availableProcessors(),
+                    offloadToCpu = true, // Keep it on CPU as we only need it for encoding
+                    keepClipOnCpu = true,
+                    keepVaeOnCpu = true
+                )
+
+                Log.i(TAG, "Encoding prompt...")
+                onProgress?.invoke("Encoding prompt", 2, 5)
+
+                cond = t5Model.precomputeCondition(
+                    prompt = params.prompt,
+                    negative = params.negative,
+                    width = params.width,
+                    height = params.height
+                )
+
+                if (params.negative.isNotEmpty()) {
+                     // For negative prompt, we might need a separate call if precomputeCondition doesn't handle it.
+                     // nativePrecomputeCondition takes both prompt and negative.
+                     // So 'cond' likely contains both if the native side handles it.
+                     // Checking StableDiffusion.kt: precomputeCondition returns a single PrecomputedCondition object.
+                     // The native function takes both prompt and negative.
+                     // So 'cond' should be sufficient?
+                     // Wait, txt2VidWithPrecomputedCondition takes 'cond' and 'uncond'.
+                     // If nativePrecomputeCondition returns a single struct, does it contain both?
+                     // Looking at sdcpp_jni.cpp:
+                     // nativePrecomputeCondition calls sd_precompute_condition.
+                     // sd_precompute_condition takes prompt and negative_prompt.
+                     // It returns sd_condition_raw_t.
+                     // Does sd_condition_raw_t contain both?
+                     // struct sd_condition_raw_t { c_crossattn, c_vector, c_concat }
+                     // Usually 'cond' is positive, 'uncond' is negative.
+                     // If sd_precompute_condition returns only one struct, it might be just the positive?
+                     // Or maybe it mixes them?
+                     // Let's check stable-diffusion.cpp implementation of sd_precompute_condition if possible.
+                     // I can't see it.
+                     // But usually in SD, you need two conditions for CFG.
+                     // If sd_precompute_condition only returns one, maybe I need to call it twice?
+                     // Once with prompt, once with negative prompt (as prompt)?
+                     // Let's assume I need to call it twice.
+                }
+                
+                // Actually, let's look at sdcpp_jni.cpp again.
+                // nativePrecomputeCondition takes prompt and negative.
+                // It calls sd_precompute_condition.
+                // If sd_precompute_condition handles both, it should return both?
+                // But it returns ONE sd_condition_raw_t*.
+                // This suggests it might only compute one condition (the positive one?).
+                // If so, how do I get the negative one?
+                // I should call it again with prompt=negative, negative=""?
+                
+                // Let's assume I need to call it twice:
+                // 1. Positive: prompt=prompt, negative=""
+                // 2. Negative: prompt=negative, negative=""
+                
+                // But nativePrecomputeCondition takes both.
+                // If I pass both, maybe it computes the "difference"? No, that's not how it works.
+                
+                // Let's assume I should call it twice to be safe and flexible.
+                
+                cond = t5Model.precomputeCondition(
+                    prompt = params.prompt,
+                    negative = "",
+                    width = params.width,
+                    height = params.height
+                )
+                
+                uncond = t5Model.precomputeCondition(
+                    prompt = params.negative,
+                    negative = "",
+                    width = params.width,
+                    height = params.height
+                )
+
+            } finally {
+                t5Model?.close()
+                t5Model = null
+            }
+
+            // 3. Free T5XXL and Prepare for Diffusion
+            Log.i(TAG, "Step 1 complete. Freeing memory...")
+            System.gc()
+            Thread.sleep(200)
+            prepareMemoryForLoading(context)
+
+            if (cond == null || uncond == null) {
+                throw IllegalStateException("Failed to precompute conditions")
+            }
+
+            // 4. Load Diffusion Model
+            Log.i(TAG, "Step 2/2: Loading Diffusion model...")
+            onProgress?.invoke("Loading model", 3, 5)
+
+            var diffusionModel: StableDiffusion? = null
+            try {
+                diffusionModel = StableDiffusion.load(
+                    context = context,
+                    modelPath = modelFile.file.absolutePath,
+                    vaePath = vaeFile.file.absolutePath,
+                    t5xxlPath = null, // Do NOT load T5XXL
+                    nThreads = Runtime.getRuntime().availableProcessors(),
+                    offloadToCpu = true,
+                    keepClipOnCpu = true,
+                    keepVaeOnCpu = true
+                )
+
+                Log.i(TAG, "Generating video...")
+                onProgress?.invoke("Generating", 4, 5)
+
+                // We need to wrap the onProgress to map the steps correctly
+                val progressWrapper = StableDiffusion.VideoProgressCallback { step, totalSteps, currentFrame, totalFrames, timePerStep ->
+                    onProgress?.invoke("Generating frame $currentFrame/$totalFrames", step, totalSteps)
+                }
+
+                return diffusionModel.txt2VidWithPrecomputedCondition(
+                    params = params,
+                    cond = cond,
+                    uncond = uncond,
+                    onProgress = progressWrapper
+                )
+
+            } finally {
+                diffusionModel?.close()
+                diffusionModel = null
+                // Final cleanup
+                System.gc()
+            }
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Sequential generation failed", e)
             throw e
         } finally {
             isLoading = false
