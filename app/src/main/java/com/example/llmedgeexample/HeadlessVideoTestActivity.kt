@@ -15,7 +15,7 @@ import kotlinx.coroutines.withContext
 /**
  * Headless activity for E2E video generation testing.
  * Launches programmatically, generates video, logs results, and exits.
- * 
+ *
  * Usage:
  * adb shell am start -n com.example.llmedgeexample/.HeadlessVideoTestActivity \
  *   --es prompt "a cat walking" \
@@ -39,7 +39,7 @@ class HeadlessVideoTestActivity : Activity() {
         private const val DEFAULT_STEPS = 10
         private const val DEFAULT_CFG_SCALE = 7.0f
         private const val DEFAULT_SEED = 42L
-        
+
         // Model config - Mixed precision (quantized encoder + fp16 main model)
         // GGUF main models (samuelchristlie) lack SD version metadata → initialization fails
         // Must use safetensors for main model until GGUF metadata issue is resolved
@@ -51,19 +51,19 @@ class HeadlessVideoTestActivity : Activity() {
         private const val WAN_VAE_ID = "Comfy-Org/Wan_2.1_ComfyUI_repackaged"
         private const val WAN_VAE_FILENAME = "wan_2.1_vae.safetensors"
         private const val WAN_T5XXL_ID = "city96/umt5-xxl-encoder-gguf"
-        private const val WAN_T5XXL_FILENAME = "umt5-xxl-encoder-Q3_K_S.gguf"
+        private const val WAN_T5XXL_FILENAME = "umt5-xxl-encoder-Q4_K_M.gguf"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
+
         // Set a minimal view to prevent immediate finish
         setContentView(android.R.layout.simple_list_item_1)
-        
+
         android.util.Log.e(TAG, "========================================")
         android.util.Log.e(TAG, "Headless Video Generation E2E Test")
         android.util.Log.e(TAG, "========================================")
-        
+
         // Extract parameters from intent
         val prompt = intent.getStringExtra("prompt") ?: DEFAULT_PROMPT
         val frames = intent.getIntExtra("frames", DEFAULT_FRAMES)
@@ -72,7 +72,7 @@ class HeadlessVideoTestActivity : Activity() {
         val steps = intent.getIntExtra("steps", DEFAULT_STEPS)
         val cfgScale = intent.getFloatExtra("cfg_scale", DEFAULT_CFG_SCALE)
         val seed = intent.getLongExtra("seed", DEFAULT_SEED)
-        
+
         android.util.Log.e(TAG, "Parameters:")
         android.util.Log.e(TAG, "  Prompt: $prompt")
         android.util.Log.e(TAG, "  Frames: $frames")
@@ -81,7 +81,7 @@ class HeadlessVideoTestActivity : Activity() {
         android.util.Log.e(TAG, "  CFG Scale: $cfgScale")
         android.util.Log.e(TAG, "  Seed: $seed")
         android.util.Log.e(TAG, "")
-        
+
         // Start generation (don't finish until complete)
         scope.launch {
             runTest(prompt, frames, width, height, steps, cfgScale, seed)
@@ -91,12 +91,12 @@ class HeadlessVideoTestActivity : Activity() {
             }
         }
     }
-    
+
     override fun onDestroy() {
         super.onDestroy()
         android.util.Log.e(TAG, "Activity destroying, cancelling scope")
     }
-    
+
     private suspend fun runTest(
         prompt: String,
         frames: Int,
@@ -107,71 +107,22 @@ class HeadlessVideoTestActivity : Activity() {
         seed: Long
     ) {
         val startTime = System.currentTimeMillis()
-        var sd: StableDiffusion? = null
-        
+
         try {
-            android.util.Log.e(TAG, "Loading model: $WAN_MODEL_ID")
-            android.util.Log.e(TAG, "Filename: $WAN_MODEL_FILENAME")
-            
-            // Load main model file first
-            android.util.Log.e(TAG, "Loading main model: $WAN_MODEL_FILENAME")
-            val modelFile = io.aatricks.llmedge.huggingface.HuggingFaceHub.ensureRepoFileOnDisk(
+            android.util.Log.e(TAG, "Loading model using VideoModelManager...")
+
+            // Use VideoModelManager to load the model
+            val sd = VideoModelManager.getOrLoadModel(
                 context = applicationContext,
-                modelId = WAN_MODEL_ID,
-                revision = "main",
-                filename = WAN_MODEL_FILENAME,
-                allowedExtensions = listOf(".safetensors", ".gguf"),
-                token = null,
-                forceDownload = false,
-                preferSystemDownloader = true,
-                onProgress = null
-            )
-            
-            // Load VAE
-            android.util.Log.e(TAG, "Loading VAE: $WAN_VAE_FILENAME")
-            val vaeFile = io.aatricks.llmedge.huggingface.HuggingFaceHub.ensureRepoFileOnDisk(
-                context = applicationContext,
-                modelId = WAN_VAE_ID,
-                revision = "main",
-                filename = WAN_VAE_FILENAME,
-                allowedExtensions = listOf(".safetensors"),
-                token = null,
-                forceDownload = false,
-                preferSystemDownloader = true,
-                onProgress = null
-            )
-            
-            // Load T5XXL encoder
-            android.util.Log.e(TAG, "Loading T5XXL encoder: $WAN_T5XXL_FILENAME")
-            val t5xxlFile = io.aatricks.llmedge.huggingface.HuggingFaceHub.ensureRepoFileOnDisk(
-                context = applicationContext,
-                modelId = WAN_T5XXL_ID,
-                revision = "main",
-                filename = WAN_T5XXL_FILENAME,
-                allowedExtensions = listOf(".gguf", ".safetensors"),
-                token = null,
-                forceDownload = false,
-                preferSystemDownloader = true,
-                onProgress = null
-            )
-            
-            // Load all three models together using file paths
-            android.util.Log.e(TAG, "Initializing Stable Diffusion context...")
-            sd = StableDiffusion.load(
-                context = applicationContext,
-                modelPath = modelFile.file.absolutePath,
-                vaePath = vaeFile.file.absolutePath,
-                t5xxlPath = t5xxlFile.file.absolutePath,
-                nThreads = Runtime.getRuntime().availableProcessors(),
-                offloadToCpu = true,
-                keepClipOnCpu = true,
-                keepVaeOnCpu = true,
-            )
-            
+                forceReload = false
+            ) { phase, current, total ->
+                android.util.Log.e(TAG, "[$current/$total] $phase")
+            }
+
             val loadTime = System.currentTimeMillis() - startTime
             android.util.Log.e(TAG, "✓ Model loaded in ${loadTime}ms")
             android.util.Log.e(TAG, "")
-            
+
             // 2. Verify video model
             if (sd.isVideoModel()) {
                 android.util.Log.e(TAG, "✓ Video model detected")
@@ -179,7 +130,7 @@ class HeadlessVideoTestActivity : Activity() {
                 Log.w(TAG, "⚠ Model not detected as video model")
             }
             android.util.Log.e(TAG, "")
-            
+
             // 3. Configure generation
             val params = StableDiffusion.VideoGenerateParams(
                 prompt = prompt,
@@ -191,29 +142,37 @@ class HeadlessVideoTestActivity : Activity() {
                 seed = seed,
                 scheduler = StableDiffusion.Scheduler.EULER_A
             )
-            
+
             android.util.Log.e(TAG, "Starting video generation...")
             val genStartTime = System.currentTimeMillis()
-            
+
             // 4. Generate with progress tracking
             var lastProgressTime = genStartTime
             val generatedFrames = sd.txt2vid(params) { step, totalSteps, currentFrame, totalFrames, timePerStep ->
                 val now = System.currentTimeMillis()
                 val elapsed = (now - lastProgressTime) / 1000.0
                 lastProgressTime = now
-                
+
                 val percent = (currentFrame.toFloat() / totalFrames * 100).toInt()
-                android.util.Log.e(TAG, "Progress: Step $step/$totalSteps, Frame $currentFrame/$totalFrames ($percent%) - ${String.format("%.2f", timePerStep)}s/step")
+                android.util.Log.e(
+                    TAG,
+                    "Progress: Step $step/$totalSteps, Frame $currentFrame/$totalFrames ($percent%) - ${
+                        String.format(
+                            "%.2f",
+                            timePerStep
+                        )
+                    }s/step"
+                )
             }
-            
+
             val genTime = System.currentTimeMillis() - genStartTime
             android.util.Log.e(TAG, "")
             android.util.Log.e(TAG, "✓ Video generation completed in ${genTime}ms")
             android.util.Log.e(TAG, "")
-            
+
             // 5. Extract metrics
             val metrics = sd.getLastGenerationMetrics()
-            
+
             android.util.Log.e(TAG, "========================================")
             android.util.Log.e(TAG, "Results Summary")
             android.util.Log.e(TAG, "========================================")
@@ -221,23 +180,23 @@ class HeadlessVideoTestActivity : Activity() {
             android.util.Log.e(TAG, "Generated frames: ${generatedFrames.size}")
             android.util.Log.e(TAG, "Resolution: ${width}x${height}")
             android.util.Log.e(TAG, "Total time: ${(System.currentTimeMillis() - startTime) / 1000.0}s")
-            
+
             if (metrics != null) {
                 android.util.Log.e(TAG, "Generation time: ${String.format("%.2f", metrics.totalTimeSeconds)}s")
                 android.util.Log.e(TAG, "Frames/sec: ${String.format("%.2f", metrics.framesPerSecond)}")
                 android.util.Log.e(TAG, "Memory used: ${metrics.peakMemoryUsageMb}MB")
             }
-            
+
             android.util.Log.e(TAG, "========================================")
             android.util.Log.e(TAG, "")
-            
+
             // Validate frames
             if (generatedFrames.size != frames) {
                 Log.e(TAG, "❌ Frame count mismatch: expected $frames, got ${generatedFrames.size}")
             } else {
                 android.util.Log.e(TAG, "✓ Frame count validated")
             }
-            
+
             generatedFrames.forEachIndexed { index, bitmap ->
                 if (bitmap.width != width || bitmap.height != height) {
                     Log.e(TAG, "❌ Frame $index resolution mismatch: ${bitmap.width}x${bitmap.height}")
@@ -245,7 +204,7 @@ class HeadlessVideoTestActivity : Activity() {
                     android.util.Log.e(TAG, "✓ Frame resolution validated")
                 }
             }
-            
+
         } catch (e: Exception) {
             Log.e(TAG, "========================================")
             Log.e(TAG, "Test FAILED")
@@ -253,8 +212,9 @@ class HeadlessVideoTestActivity : Activity() {
             Log.e(TAG, "Error: ${e.message}", e)
             Log.e(TAG, "========================================")
         } finally {
-            sd?.close()
-            
+            // Model lifecycle is managed by VideoModelManager
+            // Don't close it here as it may be reused
+
             // Give logs time to flush
             withContext(Dispatchers.Main) {
                 finish()

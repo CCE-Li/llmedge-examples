@@ -1,5 +1,6 @@
 package com.example.llmedgeexample
 
+import android.content.Context
 import android.os.Bundle
 import android.view.View
 import android.widget.Button
@@ -27,7 +28,6 @@ class VideoGenerationActivity : AppCompatActivity() {
     private lateinit var previewImage: ImageView
     private lateinit var metricsLabel: TextView
 
-    private var sd: StableDiffusion? = null
     private var generationJob: Job? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -56,9 +56,17 @@ class VideoGenerationActivity : AppCompatActivity() {
             return
         }
 
+        // Show loading UI immediately on main thread
+        updateProgressUI(0, getString(R.string.video_status_loading_model))
+        progressBar.visibility = View.VISIBLE
+        progressBar.isIndeterminate = true
+        generateButton.isEnabled = false
+
         generationJob = lifecycleScope.launch(Dispatchers.Default) {
             try {
-                updateProgressUI(0, getString(R.string.video_status_loading_model))
+                // Aggressive memory management before loading
+                prepareMemoryForLoading()
+
                 val model = ensureModelLoaded()
                 val prompt = promptInput.text.toString().ifBlank { DEFAULT_PROMPT }
                 updateProgressUI(0, getString(R.string.video_status_generating))
@@ -105,92 +113,84 @@ class VideoGenerationActivity : AppCompatActivity() {
                 }
             } catch (cancelled: CancellationException) {
                 updateProgressUI(0, getString(R.string.video_status_cancelled))
+            } catch (oom: OutOfMemoryError) {
+                android.util.Log.e("VideoGeneration", "Out of memory during generation", oom)
+                updateProgressUI(
+                    0,
+                    getString(R.string.video_status_failed, "Out of memory. Close other apps and try again.")
+                )
             } catch (t: Throwable) {
+                android.util.Log.e("VideoGeneration", "Failed during generation", t)
                 updateProgressUI(0, getString(R.string.video_status_failed, t.localizedMessage ?: "error"))
             } finally {
                 withContext(Dispatchers.Main) {
                     progressBar.visibility = View.GONE
+                    generateButton.isEnabled = true
                     generationJob = null
                 }
             }
         }
     }
 
-    private suspend fun ensureModelLoaded(): StableDiffusion {
-        val cached = sd
-        if (cached != null) return cached
+    /**
+     * Prepares memory for model loading by requesting GC and trimming caches
+     */
+    private fun prepareMemoryForLoading() {
+        android.util.Log.d("VideoGeneration", "Preparing memory for model loading")
 
-        val loaded = try {
-            // Download all three model files explicitly (same as HeadlessVideoTestActivity)
-            val modelFile = io.aatricks.llmedge.huggingface.HuggingFaceHub.ensureRepoFileOnDisk(
-                context = applicationContext,
-                modelId = WAN_MODEL_ID,
-                revision = "main",
-                filename = WAN_MODEL_FILENAME,
-                allowedExtensions = listOf(".safetensors", ".gguf"),
-                token = null,
-                forceDownload = false,
-                preferSystemDownloader = true,
-                onProgress = null
+        // Force garbage collection multiple times
+        System.gc()
+        Thread.sleep(100)
+        System.gc()
+
+        // Trim memory caches
+        onTrimMemory(android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW)
+
+        // Log memory state
+        val runtime = Runtime.getRuntime()
+        val usedMemMB = (runtime.totalMemory() - runtime.freeMemory()) / (1024 * 1024)
+        val maxMemMB = runtime.maxMemory() / (1024 * 1024)
+        val freeMemMB = maxMemMB - usedMemMB
+
+        android.util.Log.d(
+            "VideoGeneration",
+            "Memory before loading: ${usedMemMB}MB used, ${freeMemMB}MB free of ${maxMemMB}MB max"
+        )
+
+        // Check if we have enough memory
+        val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        val memoryInfo = android.app.ActivityManager.MemoryInfo()
+        activityManager.getMemoryInfo(memoryInfo)
+        val availMemMB = memoryInfo.availMem / (1024 * 1024)
+
+        android.util.Log.d("VideoGeneration", "System available memory: ${availMemMB}MB")
+
+        if (availMemMB < 2000) {
+            android.util.Log.w(
+                "VideoGeneration",
+                "Low memory warning: only ${availMemMB}MB available. Model loading may fail."
             )
-            
-            val vaeFile = io.aatricks.llmedge.huggingface.HuggingFaceHub.ensureRepoFileOnDisk(
-                context = applicationContext,
-                modelId = WAN_VAE_ID,
-                revision = "main",
-                filename = WAN_VAE_FILENAME,
-                allowedExtensions = listOf(".safetensors"),
-                token = null,
-                forceDownload = false,
-                preferSystemDownloader = true,
-                onProgress = null
-            )
-            
-            val t5xxlFile = io.aatricks.llmedge.huggingface.HuggingFaceHub.ensureRepoFileOnDisk(
-                context = applicationContext,
-                modelId = WAN_T5XXL_ID,
-                revision = "main",
-                filename = WAN_T5XXL_FILENAME,
-                allowedExtensions = listOf(".gguf", ".safetensors"),
-                token = null,
-                forceDownload = false,
-                preferSystemDownloader = true,
-                onProgress = null
-            )
-            
-            // Load all three models together using file paths
-            StableDiffusion.load(
-                context = applicationContext,
-                modelPath = modelFile.file.absolutePath,
-                vaePath = vaeFile.file.absolutePath,
-                t5xxlPath = t5xxlFile.file.absolutePath,
-                nThreads = Runtime.getRuntime().availableProcessors(),
-                offloadToCpu = true,
-                keepClipOnCpu = true,
-                keepVaeOnCpu = true,
-            )
-        } catch (t: Throwable) {
-            withContext(Dispatchers.Main) {
-                Toast.makeText(
-                    this@VideoGenerationActivity,
-                    getString(R.string.video_status_failed, t.localizedMessage ?: "unknown"),
-                    Toast.LENGTH_LONG,
-                ).show()
-            }
-            throw t
         }
-        sd = loaded
-        return loaded
+    }
+
+    private suspend fun ensureModelLoaded(): StableDiffusion {
+        return VideoModelManager.getOrLoadModel(
+            context = applicationContext,
+            forceReload = false
+        ) { phase, current, total ->
+            // updateProgressUI already uses runOnUiThread internally
+            updateProgressUI(0, "$phase ($current/$total)")
+        }
     }
 
     private fun cancelGeneration() {
         generationJob?.cancel()
-        sd?.cancelGeneration()
+        VideoModelManager.getCachedModelOrNull()?.cancelGeneration()
         updateProgressUI(0, getString(R.string.video_status_cancelled))
     }
 
     private fun updateProgressUI(percent: Int, status: String) {
-        progressBar.post {
+        runOnUiThread {
             progressBar.visibility = View.VISIBLE
             progressBar.isIndeterminate = percent == 0
             if (!progressBar.isIndeterminate) {
@@ -200,22 +200,37 @@ class VideoGenerationActivity : AppCompatActivity() {
         }
     }
 
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        when (level) {
+            android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW,
+            android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL -> {
+                android.util.Log.w(
+                    "VideoGeneration",
+                    "System memory low (level=$level), cancelling generation if active"
+                )
+                if (generationJob?.isActive == true) {
+                    cancelGeneration()
+                    runOnUiThread {
+                        Toast.makeText(
+                            this,
+                            "Generation cancelled due to low memory",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
+            }
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         generationJob?.cancel()
-        sd?.close()
-        sd = null
+        // Model lifecycle is managed by VideoModelManager
+        // Don't close the model here as it may be reused
     }
 
     companion object {
-        // Wan 2.1 T2V models - Using official Comfy-Org repackaged models
-        // See: https://github.com/leejet/stable-diffusion.cpp/blob/master/docs/wan.md
-        private const val WAN_MODEL_ID = "Comfy-Org/Wan_2.1_ComfyUI_repackaged"
-        private const val WAN_MODEL_FILENAME = "wan2.1_t2v_1.3B_fp16.safetensors"
-        private const val WAN_VAE_ID = "Comfy-Org/Wan_2.1_ComfyUI_repackaged"
-        private const val WAN_VAE_FILENAME = "wan_2.1_vae.safetensors"
-        private const val WAN_T5XXL_ID = "city96/umt5-xxl-encoder-gguf"
-        private const val WAN_T5XXL_FILENAME = "umt5-xxl-encoder-Q3_K_S.gguf"
         private const val DEFAULT_PROMPT = "A dog running in the park"
     }
 }
