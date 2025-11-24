@@ -193,7 +193,7 @@ object VideoModelManager {
                     vaePath = null,
                     t5xxlPath = null, // Already passed as modelPath
                     nThreads = Runtime.getRuntime().availableProcessors(),
-                    offloadToCpu = true, // Keep it on CPU as we only need it for encoding
+                    offloadToCpu = true, // Keep T5 on CPU to save VRAM
                     keepClipOnCpu = true,
                     keepVaeOnCpu = true
                 )
@@ -209,62 +209,20 @@ object VideoModelManager {
                 )
 
                 if (params.negative.isNotEmpty()) {
-                     // For negative prompt, we might need a separate call if precomputeCondition doesn't handle it.
-                     // nativePrecomputeCondition takes both prompt and negative.
-                     // So 'cond' likely contains both if the native side handles it.
-                     // Checking StableDiffusion.kt: precomputeCondition returns a single PrecomputedCondition object.
-                     // The native function takes both prompt and negative.
-                     // So 'cond' should be sufficient?
-                     // Wait, txt2VidWithPrecomputedCondition takes 'cond' and 'uncond'.
-                     // If nativePrecomputeCondition returns a single struct, does it contain both?
-                     // Looking at sdcpp_jni.cpp:
-                     // nativePrecomputeCondition calls sd_precompute_condition.
-                     // sd_precompute_condition takes prompt and negative_prompt.
-                     // It returns sd_condition_raw_t.
-                     // Does sd_condition_raw_t contain both?
-                     // struct sd_condition_raw_t { c_crossattn, c_vector, c_concat }
-                     // Usually 'cond' is positive, 'uncond' is negative.
-                     // If sd_precompute_condition returns only one struct, it might be just the positive?
-                     // Or maybe it mixes them?
-                     // Let's check stable-diffusion.cpp implementation of sd_precompute_condition if possible.
-                     // I can't see it.
-                     // But usually in SD, you need two conditions for CFG.
-                     // If sd_precompute_condition only returns one, maybe I need to call it twice?
-                     // Once with prompt, once with negative prompt (as prompt)?
-                     // Let's assume I need to call it twice.
+                    uncond = t5Model.precomputeCondition(
+                        prompt = params.negative,
+                        negative = "",
+                        width = params.width,
+                        height = params.height
+                    )
+                } else {
+                    uncond = t5Model.precomputeCondition(
+                        prompt = "",
+                        negative = "",
+                        width = params.width,
+                        height = params.height
+                    )
                 }
-                
-                // Actually, let's look at sdcpp_jni.cpp again.
-                // nativePrecomputeCondition takes prompt and negative.
-                // It calls sd_precompute_condition.
-                // If sd_precompute_condition handles both, it should return both?
-                // But it returns ONE sd_condition_raw_t*.
-                // This suggests it might only compute one condition (the positive one?).
-                // If so, how do I get the negative one?
-                // I should call it again with prompt=negative, negative=""?
-                
-                // Let's assume I need to call it twice:
-                // 1. Positive: prompt=prompt, negative=""
-                // 2. Negative: prompt=negative, negative=""
-                
-                // But nativePrecomputeCondition takes both.
-                // If I pass both, maybe it computes the "difference"? No, that's not how it works.
-                
-                // Let's assume I should call it twice to be safe and flexible.
-                
-                cond = t5Model.precomputeCondition(
-                    prompt = params.prompt,
-                    negative = "",
-                    width = params.width,
-                    height = params.height
-                )
-                
-                uncond = t5Model.precomputeCondition(
-                    prompt = params.negative,
-                    negative = "",
-                    width = params.width,
-                    height = params.height
-                )
 
             } finally {
                 t5Model?.close()
@@ -293,18 +251,19 @@ object VideoModelManager {
                     vaePath = vaeFile.file.absolutePath,
                     t5xxlPath = null, // Do NOT load T5XXL
                     nThreads = Runtime.getRuntime().availableProcessors(),
-                    offloadToCpu = true,
-                    keepClipOnCpu = true,
-                    keepVaeOnCpu = true
+                    offloadToCpu = false, // Enable GPU for speed
+                    keepClipOnCpu = false,
+                    keepVaeOnCpu = false
                 )
 
                 Log.i(TAG, "Generating video...")
                 onProgress?.invoke("Generating", 4, 5)
 
                 // We need to wrap the onProgress to map the steps correctly
-                val progressWrapper = StableDiffusion.VideoProgressCallback { step, totalSteps, currentFrame, totalFrames, timePerStep ->
-                    onProgress?.invoke("Generating frame $currentFrame/$totalFrames", step, totalSteps)
-                }
+                val progressWrapper =
+                    StableDiffusion.VideoProgressCallback { step, totalSteps, currentFrame, totalFrames, timePerStep ->
+                        onProgress?.invoke("Generating frame $currentFrame/$totalFrames", step, totalSteps)
+                    }
 
                 return diffusionModel.txt2VidWithPrecomputedCondition(
                     params = params,
