@@ -42,7 +42,11 @@
         <activity
             android:name=".VideoGenerationActivity"
             android:exported="false"
-        />
+            android:screenOrientation="portrait" />
+        <activity
+            android:name=".ImageGenerationActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
         <activity
             android:name=".HeadlessVideoTestActivity"
             android:exported="true"

@@ -1,6 +1,5 @@
 package com.example.llmedgeexample
 
-import android.content.Context
 import android.os.Bundle
 import android.view.View
 import android.widget.Button
@@ -11,14 +10,13 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
-import io.aatricks.llmedge.StableDiffusion
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-class VideoGenerationActivity : AppCompatActivity() {
+class ImageGenerationActivity : AppCompatActivity() {
 
     private lateinit var promptInput: EditText
     private lateinit var generateButton: Button
@@ -26,21 +24,20 @@ class VideoGenerationActivity : AppCompatActivity() {
     private lateinit var progressBar: ProgressBar
     private lateinit var progressLabel: TextView
     private lateinit var previewImage: ImageView
-    private lateinit var metricsLabel: TextView
 
     private var generationJob: Job? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_video_generation)
+        setContentView(R.layout.activity_video_generation) // Reusing layout for simplicity
 
         promptInput = findViewById(R.id.videoPromptInput)
         generateButton = findViewById(R.id.btnGenerateVideo)
+        generateButton.text = "Generate Image"
         cancelButton = findViewById(R.id.btnCancelVideo)
         progressBar = findViewById(R.id.videoProgressBar)
         progressLabel = findViewById(R.id.videoProgressLabel)
         previewImage = findViewById(R.id.videoPreview)
-        metricsLabel = findViewById(R.id.videoMetricsLabel)
 
         progressBar.max = 100
         progressBar.progress = 0
@@ -52,12 +49,11 @@ class VideoGenerationActivity : AppCompatActivity() {
 
     private fun startGeneration() {
         if (generationJob?.isActive == true) {
-            Toast.makeText(this, R.string.video_status_generation_running, Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Generation already running", Toast.LENGTH_SHORT).show()
             return
         }
 
-        // Show loading UI immediately on main thread
-        updateProgressUI(0, getString(R.string.video_status_loading_model))
+        updateProgressUI(0, "Loading model...")
         progressBar.visibility = View.VISIBLE
         progressBar.isIndeterminate = true
         generateButton.isEnabled = false
@@ -65,20 +61,19 @@ class VideoGenerationActivity : AppCompatActivity() {
         generationJob = lifecycleScope.launch(Dispatchers.Default) {
             try {
                 val prompt = promptInput.text.toString().ifBlank { DEFAULT_PROMPT }
-                updateProgressUI(0, getString(R.string.video_status_generating))
+                updateProgressUI(0, "Generating image...")
 
-                val params = io.aatricks.llmedge.LLMEdgeManager.VideoGenerationParams(
+                val params = io.aatricks.llmedge.LLMEdgeManager.ImageGenerationParams(
                     prompt = prompt,
-                    width = 256,
-                    height = 256,
-                    videoFrames = 16,
+                    width = 512,
+                    height = 512,
                     steps = 20,
                     cfgScale = 7.0f,
-                    flashAttn = true, // Enable Flash Attention
+                    flashAttn = true,
                     forceSequentialLoad = false // Auto-detect
                 )
 
-                val frames = io.aatricks.llmedge.LLMEdgeManager.generateVideo(
+                val bitmap = io.aatricks.llmedge.LLMEdgeManager.generateImage(
                     context = applicationContext,
                     params = params
                 ) { phase, current, total ->
@@ -86,26 +81,23 @@ class VideoGenerationActivity : AppCompatActivity() {
                     updateProgressUI(0, status)
                 }
 
-                if (frames.isNotEmpty()) {
+                if (bitmap != null) {
                     withContext(Dispatchers.Main) {
-                        previewImage.setImageBitmap(frames.first())
+                        previewImage.setImageBitmap(bitmap)
                     }
                 }
 
                 withContext(Dispatchers.Main) {
-                    updateProgressUI(100, getString(R.string.video_status_complete, frames.size))
+                    updateProgressUI(100, "Generation complete")
                 }
             } catch (cancelled: CancellationException) {
-                updateProgressUI(0, getString(R.string.video_status_cancelled))
+                updateProgressUI(0, "Cancelled")
             } catch (oom: OutOfMemoryError) {
-                android.util.Log.e("VideoGeneration", "Out of memory during generation", oom)
-                updateProgressUI(
-                    0,
-                    getString(R.string.video_status_failed, "Out of memory. Close other apps and try again.")
-                )
+                android.util.Log.e("ImageGeneration", "Out of memory", oom)
+                updateProgressUI(0, "Out of memory")
             } catch (t: Throwable) {
-                android.util.Log.e("VideoGeneration", "Failed during generation", t)
-                updateProgressUI(0, getString(R.string.video_status_failed, t.localizedMessage ?: "error"))
+                android.util.Log.e("ImageGeneration", "Failed", t)
+                updateProgressUI(0, "Failed: ${t.localizedMessage}")
             } finally {
                 withContext(Dispatchers.Main) {
                     progressBar.visibility = View.GONE
@@ -119,7 +111,7 @@ class VideoGenerationActivity : AppCompatActivity() {
     private fun cancelGeneration() {
         generationJob?.cancel()
         io.aatricks.llmedge.LLMEdgeManager.cancelGeneration()
-        updateProgressUI(0, getString(R.string.video_status_cancelled))
+        updateProgressUI(0, "Cancelled")
     }
 
     private fun updateProgressUI(percent: Int, status: String) {
@@ -133,36 +125,12 @@ class VideoGenerationActivity : AppCompatActivity() {
         }
     }
 
-    override fun onTrimMemory(level: Int) {
-        super.onTrimMemory(level)
-        when (level) {
-            android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW,
-            android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL -> {
-                android.util.Log.w(
-                    "VideoGeneration",
-                    "System memory low (level=$level), cancelling generation if active"
-                )
-                if (generationJob?.isActive == true) {
-                    cancelGeneration()
-                    runOnUiThread {
-                        Toast.makeText(
-                            this,
-                            "Generation cancelled due to low memory",
-                            Toast.LENGTH_LONG
-                        ).show()
-                    }
-                }
-            }
-        }
-    }
-
     override fun onDestroy() {
         super.onDestroy()
         generationJob?.cancel()
-        // Model lifecycle is managed by LLMEdgeManager
     }
 
     companion object {
-        private const val DEFAULT_PROMPT = "A dog running in the park"
+        private const val DEFAULT_PROMPT = "A futuristic city"
     }
 }

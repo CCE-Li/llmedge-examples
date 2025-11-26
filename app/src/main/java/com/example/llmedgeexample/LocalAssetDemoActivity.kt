@@ -1,15 +1,13 @@
 package com.example.llmedgeexample
 
 import android.os.Bundle
-import android.view.MenuItem
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import io.aatricks.llmedge.LLMEdgeManager
 import io.aatricks.llmedge.SmolLM
-import io.aatricks.llmedge.SmolLM.InferenceParams
 import io.aatricks.llmedge.util.MemoryMetrics
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -17,8 +15,6 @@ import java.io.File
 import java.util.Locale
 
 class LocalAssetDemoActivity : AppCompatActivity() {
-
-    private val llm = SmolLM()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -31,7 +27,7 @@ class LocalAssetDemoActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val before = MemoryMetrics.snapshot(this@LocalAssetDemoActivity)
             withContext(Dispatchers.Main) {
-                output.text = "Vulkan enabled: ${llm.isVulkanEnabled()}\n" +
+                output.text = "Memory before:\n" +
                     before.toPretty(this@LocalAssetDemoActivity) + "\n\n"
             }
 
@@ -43,36 +39,18 @@ class LocalAssetDemoActivity : AppCompatActivity() {
                 )
             }
 
-            try {
-                llm.load(
-                    modelPath = modelPath,
-                    params = InferenceParams(
-                        numThreads = Runtime.getRuntime().availableProcessors().coerceAtMost(4),
-                        contextSize = 8192L,
-                    )
-                )
-                val afterLoad = MemoryMetrics.snapshot(this@LocalAssetDemoActivity)
-                withContext(Dispatchers.Main) {
-                    output.append("Loaded OK.\n\nAfter load:\n" + afterLoad.toPretty(this@LocalAssetDemoActivity) + "\n\n")
-                }
-            } catch (t: Throwable) {
-                withContext(Dispatchers.Main) {
-                    output.append("\nLoad failed: ${t.message}\n")
-                }
-                return@launch
-            }
-
-            llm.addSystemPrompt("You are a helpful assistant.")
+            val params = LLMEdgeManager.TextGenerationParams(
+                prompt = "Say 'hello from llmedge'.",
+                modelPath = modelPath
+            )
 
             try {
-                val blocking = withContext(Dispatchers.Default) {
-                    llm.getResponse("Say 'hello from llmedge'.")
-                }
-                val blockingMetrics = llm.getLastGenerationMetrics()
+                val blocking = LLMEdgeManager.generateText(this@LocalAssetDemoActivity, params)
+                val blockingMetrics = LLMEdgeManager.getLastTextGenerationMetrics()
                 val afterBlocking = MemoryMetrics.snapshot(this@LocalAssetDemoActivity)
                 withContext(Dispatchers.Main) {
                     output.append("Blocking response:\n\n$blocking\n\n")
-                    output.append("Blocking metrics: ${formatMetrics(blockingMetrics)}\n\n")
+                    blockingMetrics?.let { output.append("Blocking metrics: ${formatMetrics(it)}\n\n") }
                     output.append("After blocking:\n" + afterBlocking.toPretty(this@LocalAssetDemoActivity) + "\n\nStreaming response:\n\n")
                 }
             } catch (t: Throwable) {
@@ -82,21 +60,26 @@ class LocalAssetDemoActivity : AppCompatActivity() {
             }
 
             val sb = StringBuilder()
+            val streamParams = LLMEdgeManager.TextGenerationParams(
+                prompt = "Write a short haiku about Android.",
+                modelPath = modelPath
+            )
+            
             val ok = withContext(Dispatchers.Default) {
                 withTimeoutOrNull(30000L) {
-                    llm.getResponseAsFlow("Write a short haiku about Android.")
-                        .collect { piece ->
-                            if (piece != "[EOG]") {
-                                sb.append(piece)
-                                withContext(Dispatchers.Main) {
-                                    output.text = output.text.toString().substringBefore("Streaming response:") +
-                                        "Streaming response:\n\n" + sb.toString()
-                                }
-                            }
-                        }
+                    LLMEdgeManager.generateText(this@LocalAssetDemoActivity, streamParams) { piece ->
+                         sb.append(piece)
+                         runOnUiThread {
+                             val currentText = output.text.toString()
+                             val prefix = currentText.substringBefore("Streaming response:") + "Streaming response:\n\n"
+                             output.text = prefix + sb.toString()
+                         }
+                    }
+                    true
                 } != null
             }
-            val streamingMetrics = if (ok) llm.getLastGenerationMetrics() else null
+            
+            val streamingMetrics = if (ok) LLMEdgeManager.getLastTextGenerationMetrics() else null
             val afterStream = MemoryMetrics.snapshot(this@LocalAssetDemoActivity)
             withContext(Dispatchers.Main) {
                 output.append(if (ok) "\n\n[done]\n\n" else "\n\n[stream timed out]\n\n")
@@ -109,11 +92,6 @@ class LocalAssetDemoActivity : AppCompatActivity() {
     override fun onSupportNavigateUp(): Boolean {
         finish()
         return true
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        llm.close()
     }
 
     private fun copyAssetIfNeeded(assetName: String): String {

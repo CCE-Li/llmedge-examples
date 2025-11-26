@@ -37,5 +37,9 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnOpenVideoGeneration).setOnClickListener {
             startActivity(Intent(this, VideoGenerationActivity::class.java))
         }
+
+        findViewById<Button>(R.id.btnOpenImageGeneration).setOnClickListener {
+            startActivity(Intent(this, ImageGenerationActivity::class.java))
+        }
     }
 }
