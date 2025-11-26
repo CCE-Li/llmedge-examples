@@ -1,7 +1,6 @@
 package com.example.llmedgeexample
 
 import android.os.Bundle
-import android.view.MenuItem
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
@@ -10,18 +9,11 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import io.aatricks.llmedge.SmolLM
-import io.aatricks.llmedge.SmolLM.InferenceParams
 import io.aatricks.llmedge.SmolLM.ThinkingMode
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import kotlin.math.max
-import kotlin.math.min
 import java.util.Locale
+import kotlinx.coroutines.launch
 
 class HuggingFaceDemoActivity : AppCompatActivity() {
-
-    private val llm = SmolLM()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -45,7 +37,8 @@ class HuggingFaceDemoActivity : AppCompatActivity() {
             val filename = inputFilename.text.toString().trim().takeIf { it.isNotEmpty() }
             val disableThinkingChecked = disableThinking.isChecked
             val reasoningBudgetText = inputReasoningBudget.text.toString().trim()
-            val parsedReasoningBudget = reasoningBudgetText.takeIf { it.isNotEmpty() }?.toIntOrNull()
+            val parsedReasoningBudget =
+                    reasoningBudgetText.takeIf { it.isNotEmpty() }?.toIntOrNull()
 
             if (modelId.isEmpty()) {
                 if (isUiActive()) {
@@ -69,77 +62,76 @@ class HuggingFaceDemoActivity : AppCompatActivity() {
 
             lifecycleScope.launch {
                 try {
-                    withContext(Dispatchers.Default) {
-                        llm.close()
-                    }
+                    // 1. Download/Ensure model is available
+                    val modelFile =
+                            io.aatricks.llmedge.LLMEdgeManager.downloadModel(
+                                    context = this@HuggingFaceDemoActivity,
+                                    modelId = modelId,
+                                    filename = filename,
+                                    revision = revision,
+                                    onProgress = { downloaded, total ->
+                                        runOnUiThread {
+                                            if (isUiActive()) {
+                                                textStatus.text = formatProgress(downloaded, total)
+                                            }
+                                        }
+                                    }
+                            )
 
-                    val heapMb = Runtime.getRuntime().maxMemory() / (1024 * 1024)
-                    val safeContext = when {
-                        heapMb <= 256 -> 2_048L
-                        heapMb <= 384 -> 4_096L
-                        else -> 6_144L
-                    }
-                    val safeThreads = min(max(Runtime.getRuntime().availableProcessors(), 1), 4)
-
-                    val safeParams = InferenceParams(
-                        storeChats = false,
-                        numThreads = safeThreads,
-                        contextSize = safeContext,
-                        thinkingMode = if (disableThinkingChecked) ThinkingMode.DISABLED else ThinkingMode.DEFAULT,
-                        reasoningBudget = parsedReasoningBudget,
-                    )
-
-                    val result = llm.loadFromHuggingFace(
-                        context = this@HuggingFaceDemoActivity,
-                        modelId = modelId,
-                        revision = revision,
-                        filename = filename,
-                        params = safeParams,
-                        forceDownload = forceDownload.isChecked,
-                        onProgress = { downloaded, total ->
-                            runOnUiThread {
-                                if (isUiActive()) {
-                                    textStatus.text = formatProgress(downloaded, total)
-                                }
-                            }
-                        }
-                    )
-                    val cacheStatus = if (result.fromCache) "(cached)" else "(downloaded)"
-                    val resolvedLabel =
-                        if (result.aliasApplied && !result.requestedModelId.equals(result.modelId, ignoreCase = true)) {
-                            "${result.modelId} (alias for ${result.requestedModelId})"
-                        } else {
-                            result.modelId
-                        }
                     if (isUiActive()) {
                         textStatus.text = buildString {
-                            append("Model ready $cacheStatus from $resolvedLabel: ${result.file.name}\n")
-                            append("Heap allowance: ${heapMb}MB\n")
-                            append("Context: ${safeParams.contextSize} tokens | Threads: ${safeParams.numThreads}\n")
-                            append("Thinking enabled: ${llm.isThinkingEnabled()} (budget=${llm.getReasoningBudget()})")
+                            append("Model ready: ${modelFile.name}\n")
+                            append("Path: ${modelFile.absolutePath}\n")
                         }
                     }
 
-                    llm.addSystemPrompt("You are a concise assistant running on-device.")
+                    // 2. Generate Text
+                    val thinkingMode =
+                            if (disableThinkingChecked)
+                                    io.aatricks.llmedge.SmolLM.ThinkingMode.DISABLED
+                            else io.aatricks.llmedge.SmolLM.ThinkingMode.DEFAULT
 
-                    val response = withContext(Dispatchers.Default) {
-                        llm.getResponse("List two quick facts about running GGUF models on Android.")
-                    }
-                    val metrics = llm.getLastGenerationMetrics()
+                    val params =
+                            io.aatricks.llmedge.LLMEdgeManager.TextGenerationParams(
+                                    prompt =
+                                            "List two quick facts about running GGUF models on Android.",
+                                    systemPrompt = "You are a concise assistant running on-device.",
+                                    modelPath = modelFile.absolutePath,
+                                    modelId = modelId, // Pass ID for tracking
+                                    modelFilename = filename
+                                                    ?: modelFile.name, // Pass filename for tracking
+                                    revision = revision,
+                                    thinkingMode = thinkingMode,
+                                    reasoningBudget = parsedReasoningBudget
+                            )
+
+                    // We use generateText which handles loading internally
+                    val response =
+                            io.aatricks.llmedge.LLMEdgeManager.generateText(
+                                    context = this@HuggingFaceDemoActivity,
+                                    params = params
+                            )
+
+                    val metrics = io.aatricks.llmedge.LLMEdgeManager.getLastTextGenerationMetrics()
+
                     if (isUiActive()) {
                         textOutput.text = buildString {
                             appendLine("Response:")
                             appendLine()
                             appendLine(response.trim())
                             appendLine()
+                            metrics?.let {
+                                appendLine(
+                                        "Metrics: tokens=${it.tokenCount}, " +
+                                                "throughput=${"%.2f".format(Locale.US, it.tokensPerSecond)} tok/s, " +
+                                                "duration=${"%.2f".format(Locale.US, it.elapsedSeconds)} s",
+                                )
+                            }
                             appendLine(
-                                "Metrics: tokens=${metrics.tokenCount}, " +
-                                    "throughput=${"%.2f".format(Locale.US, metrics.tokensPerSecond)} tok/s, " +
-                                    "duration=${"%.2f".format(Locale.US, metrics.elapsedSeconds)} s",
+                                    "Thinking mode: $thinkingMode (budget=$parsedReasoningBudget)"
                             )
-                            appendLine("Thinking mode: ${llm.getThinkingMode()} (budget=${llm.getReasoningBudget()})")
                             appendLine()
-                            append("Stored at: ${result.file.absolutePath}")
+                            append("Stored at: ${modelFile.absolutePath}")
                         }
                     }
                 } catch (t: Throwable) {
@@ -161,11 +153,6 @@ class HuggingFaceDemoActivity : AppCompatActivity() {
         return true
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        llm.close()
-    }
-
     private fun formatProgress(downloaded: Long, total: Long?): String {
         val downloadedMb = downloaded / (1024.0 * 1024.0)
         val totalMb = total?.div(1024.0 * 1024.0)
@@ -177,7 +164,7 @@ class HuggingFaceDemoActivity : AppCompatActivity() {
     }
 
     private fun isUiActive(): Boolean =
-    lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) &&
-            !isFinishing &&
-            !isDestroyed
+            lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) &&
+                    !isFinishing &&
+                    !isDestroyed
 }
