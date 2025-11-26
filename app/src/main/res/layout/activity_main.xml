@@ -52,12 +52,7 @@
             android:layout_marginTop="12dp"
             android:text="LLaVA Vision Demo" />
 
-        <Button
-            android:id="@+id/btnOpenStableDiffusion"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:text="Stable Diffusion (Vulkan)" />
+
 
         <Button
             android:id="@+id/btnOpenVideoGeneration"
@@ -71,7 +66,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            android:text="Image Generation (Wan 2.1)" />
+            android:text="Image Generation" />
 
     </LinearLayout>
 </ScrollView>
