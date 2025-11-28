@@ -22,7 +22,8 @@ import io.aatricks.llmedge.vision.ImageUtils
 import io.aatricks.llmedge.vision.LocalImageDescriber
 import io.aatricks.llmedge.vision.ImageSource
 import kotlinx.coroutines.CoroutineExceptionHandler
-import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
@@ -31,7 +32,9 @@ import kotlinx.coroutines.withContext
 class LlavaVisionActivity : AppCompatActivity() {
     private val TAG = "LlavaVisionActivity"
 
-    private val scope = MainScope()
+    // Use IO dispatcher for native JNI operations instead of MainScope which uses Main dispatcher
+    // This provides better parallelism for blocking native calls
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val btnPick: Button by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.btnPickImage) }
     private val btnTake: Button by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.btnTakePicture) }

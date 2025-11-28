@@ -20,7 +20,8 @@ import kotlinx.coroutines.withContext
  */
 class HeadlessVideoTestActivity : Activity() {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    // Use IO dispatcher for native JNI operations for better performance
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     companion object {
         private const val TAG = "VideoE2E"

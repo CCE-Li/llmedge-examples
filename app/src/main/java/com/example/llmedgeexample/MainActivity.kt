@@ -1,15 +1,37 @@
 package com.example.llmedgeexample
 
+import android.app.ActivityManager
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.widget.Button
+import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import io.aatricks.llmedge.LLMEdgeManager
 
+/**
+ * Main activity for LLMEdge Example app.
+ * 
+ * Provides navigation to various demo activities:
+ * - Local asset model loading
+ * - HuggingFace model download
+ * - RAG (Retrieval Augmented Generation)
+ * - Image-to-text (OCR)
+ * - LLaVA vision analysis
+ * - Video generation
+ * - Image generation
+ */
 class MainActivity : AppCompatActivity() {
+
+    companion object {
+        private const val BYTES_IN_MB = 1024L * 1024L
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        // Navigation buttons
         findViewById<Button>(R.id.btnOpenLocal).setOnClickListener {
             startActivity(Intent(this, LocalAssetDemoActivity::class.java))
         }
@@ -36,6 +58,54 @@ class MainActivity : AppCompatActivity() {
 
         findViewById<Button>(R.id.btnOpenImageGeneration).setOnClickListener {
             startActivity(Intent(this, ImageGenerationActivity::class.java))
+        }
+
+        // Display memory and device info
+        updateMemoryInfo()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        updateMemoryInfo()
+    }
+
+    private fun updateMemoryInfo() {
+        try {
+            val memInfoView = findViewById<TextView>(R.id.txtMemoryInfo) ?: return
+
+            val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            val memInfo = ActivityManager.MemoryInfo()
+            activityManager.getMemoryInfo(memInfo)
+
+            val availMB = memInfo.availMem / BYTES_IN_MB
+            val totalMB = memInfo.totalMem / BYTES_IN_MB
+            val usedMB = totalMB - availMB
+
+            val runtime = Runtime.getRuntime()
+            val heapUsed = (runtime.totalMemory() - runtime.freeMemory()) / BYTES_IN_MB
+            val heapMax = runtime.maxMemory() / BYTES_IN_MB
+
+            val sb = StringBuilder()
+            sb.appendLine("System: ${usedMB}MB / ${totalMB}MB (${availMB}MB free)")
+            sb.appendLine("Heap: ${heapUsed}MB / ${heapMax}MB")
+
+            // Vulkan GPU info
+            val vulkanInfo = LLMEdgeManager.getVulkanDeviceInfo()
+            if (vulkanInfo != null) {
+                sb.appendLine("GPU: ${vulkanInfo.freeMemoryMB}MB / ${vulkanInfo.totalMemoryMB}MB")
+            } else {
+                sb.appendLine("GPU: Not available")
+            }
+
+            // Low memory warning
+            val totalRamGB = totalMB / 1024
+            if (totalRamGB < 8) {
+                sb.appendLine("Note: Low RAM device - sequential loading enabled")
+            }
+
+            memInfoView.text = sb.toString().trim()
+        } catch (e: Exception) {
+            // TextView might not exist in layout - that's okay
         }
     }
 }
