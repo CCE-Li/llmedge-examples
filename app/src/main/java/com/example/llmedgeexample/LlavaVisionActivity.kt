@@ -33,14 +33,14 @@ class LlavaVisionActivity : AppCompatActivity() {
 
     private val scope = MainScope()
 
-    private lateinit var btnPick: Button
-    private lateinit var btnTake: Button
-    private lateinit var btnRun: Button
-    private lateinit var btnDescribeLocal: Button
-    private lateinit var etPrompt: EditText
-    private lateinit var tvResult: TextView
-    private lateinit var imagePreview: ImageView
-    private lateinit var progress: ProgressBar
+    private val btnPick: Button by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.btnPickImage) }
+    private val btnTake: Button by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.btnTakePicture) }
+    private val btnRun: Button by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.btnRun) }
+    private val btnDescribeLocal: Button by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.btnDescribeLocal) }
+    private val etPrompt: EditText by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.etPrompt) }
+    private val tvResult: TextView by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.tvResult) }
+    private val imagePreview: ImageView by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.imagePreview) }
+    private val progress: ProgressBar by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.progress) }
 
     private var imageUri: Uri? = null
 
@@ -85,14 +85,7 @@ class LlavaVisionActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_llava_vision)
 
-        btnPick = findViewById(R.id.btnPickImage)
-        btnTake = findViewById(R.id.btnTakePicture)
-        btnRun = findViewById(R.id.btnRun)
-        btnDescribeLocal = findViewById(R.id.btnDescribeLocal)
-        etPrompt = findViewById(R.id.etPrompt)
-        tvResult = findViewById(R.id.tvResult)
-        imagePreview = findViewById(R.id.imagePreview)
-        progress = findViewById(R.id.progress)
+        // Views are initialized lazily via delegates
 
         btnPick.setOnClickListener {
             pickImageLauncher.launch("image/*")

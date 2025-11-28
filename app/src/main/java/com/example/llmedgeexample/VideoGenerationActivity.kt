@@ -20,13 +20,13 @@ import kotlinx.coroutines.withContext
 
 class VideoGenerationActivity : AppCompatActivity() {
 
-    private lateinit var promptInput: EditText
-    private lateinit var generateButton: Button
-    private lateinit var cancelButton: Button
-    private lateinit var progressBar: ProgressBar
-    private lateinit var progressLabel: TextView
-    private lateinit var previewImage: ImageView
-    private lateinit var metricsLabel: TextView
+    private val promptInput: EditText by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoPromptInput) }
+    private val generateButton: Button by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.btnGenerateVideo) }
+    private val cancelButton: Button by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.btnCancelVideo) }
+    private val progressBar: ProgressBar by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoProgressBar) }
+    private val progressLabel: TextView by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoProgressLabel) }
+    private val previewImage: ImageView by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoPreview) }
+    private val metricsLabel: TextView by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoMetricsLabel) }
 
     private var generationJob: Job? = null
 
@@ -34,13 +34,7 @@ class VideoGenerationActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_video_generation)
 
-        promptInput = findViewById(R.id.videoPromptInput)
-        generateButton = findViewById(R.id.btnGenerateVideo)
-        cancelButton = findViewById(R.id.btnCancelVideo)
-        progressBar = findViewById(R.id.videoProgressBar)
-        progressLabel = findViewById(R.id.videoProgressLabel)
-        previewImage = findViewById(R.id.videoPreview)
-        metricsLabel = findViewById(R.id.videoMetricsLabel)
+        // Views are initialized lazily via delegates
 
         progressBar.max = 100
         progressBar.progress = 0

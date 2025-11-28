@@ -3,6 +3,7 @@ package com.example.llmedgeexample
 import android.app.ActivityManager
 import android.content.Context
 import android.util.Log
+import kotlinx.coroutines.delay
 import io.aatricks.llmedge.StableDiffusion
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -113,6 +114,28 @@ object VideoModelManager {
         }
     }
 
+    // Helper: best-effort synchronous GC attempt; non-blocking
+    private fun attemptSyncGc() {
+        try {
+            Runtime.getRuntime().gc()
+            System.gc()
+            System.runFinalization()
+        } catch (e: Throwable) {
+            Log.w(TAG, "attemptSyncGc failed", e)
+        }
+    }
+
+    // Helper: suspend-friendly GC attempt that also waits briefly
+    private suspend fun attemptGcAndDelay(delayMs: Long = 200L) {
+        attemptSyncGc()
+        try {
+            delay(delayMs)
+        } catch (e: Throwable) {
+            // any cancellation or unexpected error is ignored - best-effort wait
+        }
+        attemptSyncGc()
+    }
+
     /**
      * Generates video using sequential (progressive) loading to save memory.
      * Flow: Load T5XXL -> Encode -> Free T5XXL -> Load Diffusion -> Generate -> Free Diffusion.
@@ -192,7 +215,7 @@ object VideoModelManager {
                     modelPath = t5xxlFile.file.absolutePath, // Trick: load T5 as main model
                     vaePath = null,
                     t5xxlPath = null, // Already passed as modelPath
-                    nThreads = Runtime.getRuntime().availableProcessors(),
+                    nThreads = io.aatricks.llmedge.CpuTopology.getOptimalThreadCount(io.aatricks.llmedge.CpuTopology.TaskType.PROMPT_PROCESSING),
                     offloadToCpu = true, // Keep T5 on CPU to save VRAM
                     keepClipOnCpu = true,
                     keepVaeOnCpu = true
@@ -231,8 +254,7 @@ object VideoModelManager {
 
             // 3. Free T5XXL and Prepare for Diffusion
             Log.i(TAG, "Step 1 complete. Freeing memory...")
-            System.gc()
-            Thread.sleep(200)
+            attemptGcAndDelay(200)
             prepareMemoryForLoading(context)
 
             if (cond == null || uncond == null) {
@@ -250,7 +272,7 @@ object VideoModelManager {
                     modelPath = modelFile.file.absolutePath,
                     vaePath = vaeFile.file.absolutePath,
                     t5xxlPath = null, // Do NOT load T5XXL
-                    nThreads = Runtime.getRuntime().availableProcessors(),
+                    nThreads = io.aatricks.llmedge.CpuTopology.getOptimalThreadCount(io.aatricks.llmedge.CpuTopology.TaskType.DIFFUSION),
                     offloadToCpu = false, // Enable GPU for speed
                     keepClipOnCpu = false,
                     keepVaeOnCpu = false
@@ -261,7 +283,7 @@ object VideoModelManager {
 
                 // We need to wrap the onProgress to map the steps correctly
                 val progressWrapper =
-                    StableDiffusion.VideoProgressCallback { step, totalSteps, currentFrame, totalFrames, timePerStep ->
+                    StableDiffusion.VideoProgressCallback { step, totalSteps, currentFrame, totalFrames, _ ->
                         onProgress?.invoke("Generating frame $currentFrame/$totalFrames", step, totalSteps)
                     }
 
@@ -276,7 +298,7 @@ object VideoModelManager {
                 diffusionModel?.close()
                 diffusionModel = null
                 // Final cleanup
-                System.gc()
+                attemptSyncGc()
             }
 
         } catch (e: Exception) {
@@ -309,9 +331,7 @@ object VideoModelManager {
                     cachedModel = null
 
                     // Force GC to reclaim memory
-                    System.gc()
-                    Thread.sleep(100)
-                    System.gc()
+                    attemptSyncGc()
 
                     contextRef?.get()?.let { context ->
                         logMemoryState(context, "After model release")
@@ -395,8 +415,7 @@ object VideoModelManager {
 
         // One more memory check and GC before the heavy native loading
         Log.d(TAG, "Final memory preparation before native load...")
-        System.gc()
-        Thread.sleep(100)
+        attemptGcAndDelay(100)
         logMemoryState(context, "Before native load")
 
         onProgress?.invoke("Initializing model in memory", 4, 4)
@@ -417,22 +436,20 @@ object VideoModelManager {
     /**
      * Prepares memory by forcing GC and checking available memory.
      */
-    private fun prepareMemoryForLoading(context: Context) {
+    private suspend fun prepareMemoryForLoading(context: Context) {
         Log.d(TAG, "Preparing memory for model loading with ULTRA-AGGRESSIVE optimization...")
 
         // Ultra-aggressive garbage collection - multiple passes
         Log.d(TAG, "Running aggressive GC cycles...")
         for (i in 1..5) {
-            System.gc()
-            System.runFinalization()
-            Thread.sleep(200)
+            attemptSyncGc()
+            delay(200)
         }
 
-        // Clear runtime caches
+        // Clear runtime caches and attempt to reclaim memory
         Runtime.getRuntime().gc()
-        Thread.sleep(300)
-        System.gc()
-        System.runFinalization()
+        delay(300)
+        attemptSyncGc()
 
         // Request memory trim at all levels
         Log.d(TAG, "Trimming memory caches...")
@@ -440,8 +457,7 @@ object VideoModelManager {
         app?.onTrimMemory(android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL)
 
         // Final GC pass
-        System.gc()
-        Thread.sleep(200)
+        attemptGcAndDelay(200)
 
         // Log current memory state
         logMemoryState(context, "Before model load")

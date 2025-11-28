@@ -28,10 +28,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 class ImageToTextActivity : AppCompatActivity() {
-    private lateinit var btnTake: Button
-    private lateinit var ivPreview: ImageView
-    private lateinit var tvResult: TextView
-    private lateinit var progress: ProgressBar
+    private val btnTake: Button by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.btnTakePicture) }
+    private val ivPreview: ImageView by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.ivPreview) }
+    private val tvResult: TextView by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.tvTextResult) }
+    private val progress: ProgressBar by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.progress) }
 
     private val TAG = "ImageToTextActivity"
 
@@ -67,10 +67,7 @@ class ImageToTextActivity : AppCompatActivity() {
         Log.d(TAG, "onCreate")
         setContentView(R.layout.activity_image_to_text)
 
-        btnTake = findViewById(R.id.btnTakePicture)
-        ivPreview = findViewById(R.id.ivPreview)
-        tvResult = findViewById(R.id.tvTextResult)
-        progress = findViewById(R.id.progress)
+        // Views are initialized lazily via delegates
 
         btnTake.setOnClickListener {
             // Request camera permission if needed
