@@ -41,12 +41,13 @@ class ImageGenerationActivity : AppCompatActivity() {
     private val progressBar: ProgressBar by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoProgressBar) }
     private val progressLabel: TextView by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoProgressLabel) }
     private val previewImage: ImageView by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoPreview) }
+    private val metricsLabel: TextView by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoMetricsLabel) }
 
     private var generationJob: Job? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_video_generation) // Reusing layout for simplicity
+        setContentView(R.layout.activity_image_generation) // Use image-specific layout
 
         // Prefer performance mode during interactive examples to favor throughput (disable for memory-constrained devices)
         io.aatricks.llmedge.LLMEdgeManager.preferPerformanceMode = true
@@ -133,11 +134,14 @@ class ImageGenerationActivity : AppCompatActivity() {
                 LLMEdgeManager.logPerformanceSnapshot()
 
                 // Show metrics
+                // Show metrics in the dedicated metrics label and progress status
                 val metrics = LLMEdgeManager.getLastDiffusionMetrics()
                 withContext(Dispatchers.Main) {
                     val metricsText = metrics?.let {
                         "Generated in ${String.format("%.1f", it.totalTimeSeconds)}s"
                     } ?: ""
+                    metricsLabel.text = metricsText.ifBlank { "No metrics available" }
+                    metricsLabel.visibility = View.VISIBLE
                     updateProgressUI(100, "Complete. $metricsText")
                 }
             } catch (cancelled: CancellationException) {
