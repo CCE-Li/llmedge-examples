@@ -48,6 +48,9 @@ class ImageGenerationActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_video_generation) // Reusing layout for simplicity
 
+        // Prefer performance mode during interactive examples to favor throughput (disable for memory-constrained devices)
+        io.aatricks.llmedge.LLMEdgeManager.preferPerformanceMode = true
+
         generateButton.text = "Generate Image"
 
         progressBar.max = 100
@@ -125,6 +128,9 @@ class ImageGenerationActivity : AppCompatActivity() {
                         previewImage.setImageBitmap(bitmap)
                     }
                 }
+
+                // Log performance information for easier debugging
+                LLMEdgeManager.logPerformanceSnapshot()
 
                 // Show metrics
                 val metrics = LLMEdgeManager.getLastDiffusionMetrics()

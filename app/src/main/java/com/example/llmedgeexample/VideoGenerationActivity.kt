@@ -50,6 +50,9 @@ class VideoGenerationActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_video_generation)
 
+        // Prefer performance mode during interactive examples to favor throughput (disable for memory-constrained devices)
+        io.aatricks.llmedge.LLMEdgeManager.preferPerformanceMode = true
+
         progressBar.max = 100
         progressBar.progress = 0
         progressBar.visibility = View.GONE
@@ -133,7 +136,8 @@ class VideoGenerationActivity : AppCompatActivity() {
                         }
                     }
                 }
-
+                // Log a performance snapshot for debugging purposes
+                LLMEdgeManager.logPerformanceSnapshot()
                 withContext(Dispatchers.Main) {
                     updateProgressUI(100, getString(R.string.video_status_complete, frames.size))
                 }

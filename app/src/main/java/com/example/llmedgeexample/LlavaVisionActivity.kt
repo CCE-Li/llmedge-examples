@@ -88,6 +88,9 @@ class LlavaVisionActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_llava_vision)
 
+        // Prefer performance mode during interactive examples to favor throughput
+        io.aatricks.llmedge.LLMEdgeManager.preferPerformanceMode = true
+
         // Views are initialized lazily via delegates
 
         btnPick.setOnClickListener {
@@ -282,6 +285,9 @@ class LlavaVisionActivity : AppCompatActivity() {
                     }
                     tvResult.text = pretty
                 }
+
+                // Print a performance snapshot to help debug generation speeds
+                LLMEdgeManager.logPerformanceSnapshot()
 
             } catch (e: Exception) {
                 Log.e(TAG, "Vision demo failed", e)
