@@ -89,7 +89,9 @@ class LlavaVisionActivity : AppCompatActivity() {
         setContentView(R.layout.activity_llava_vision)
 
         // Prefer performance mode during interactive examples to favor throughput
-        io.aatricks.llmedge.LLMEdgeManager.preferPerformanceMode = true
+        // DISABLED: Vulkan backend causing hangs on some devices. Reverting to CPU (stable).
+        // io.aatricks.llmedge.LLMEdgeManager.preferPerformanceMode = true
+        io.aatricks.llmedge.LLMEdgeManager.preferPerformanceMode = false
 
         // Views are initialized lazily via delegates
 
