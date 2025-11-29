@@ -50,8 +50,11 @@ class VideoGenerationActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_video_generation)
 
-        // Prefer performance mode during interactive examples to favor throughput (disable for memory-constrained devices)
-        io.aatricks.llmedge.LLMEdgeManager.preferPerformanceMode = true
+        // Prefer performance mode during interactive examples to favor throughput.
+        // For memory-constrained devices (e.g. 8GB), disable to avoid OOMs during sequential
+        // model loads where CPU offload is required to reduce peak memory usage.
+        val isLowMem = isLowMemoryDevice()
+        io.aatricks.llmedge.LLMEdgeManager.preferPerformanceMode = !isLowMem
 
         progressBar.max = 100
         progressBar.progress = 0
