@@ -223,31 +223,21 @@ class LlavaVisionActivity : AppCompatActivity() {
                 val height = scaledBmp.height
                 val dimsText = "${width}x${height}"
                 
-                // 3. Build Prompt
+                // 3. Build Prompt (ChatML format for Phi-3)
                 val sb = StringBuilder()
-                sb.appendLine("SYSTEM: You are an assistant that answers questions using ONLY the provided image context and OCR text. Do NOT invent facts or guess. If the information is not present in the image or OCR, respond exactly: 'I don't know based on the image.' Be concise (max 150 words). When relevant, transcribe OCR text verbatim and cite it.")
-                sb.appendLine()
-                sb.appendLine("Context (image + OCR):")
-                sb.appendLine("- Image size (informational): $dimsText")
+                sb.append("<|system|>\n")
+                sb.append("You are a helpful assistant.")
+                sb.append("<|end|>\n")
+                sb.append("<|user|>\n") // Start user message
+                sb.append("Context (image + OCR):\n")
+                sb.append("- Image size: $dimsText\n")
                 if (ocrText.isNotBlank()) {
-                    sb.appendLine("- OCR_TEXT_START")
-                    val ocrSnippet = ocrText.take(2000)
-                    sb.appendLine(ocrSnippet)
-                    sb.appendLine("- OCR_TEXT_END")
-                } else {
-                    sb.appendLine("- OCR_TEXT_START\n<no OCR text available>\n- OCR_TEXT_END")
+                    sb.append("- OCR: $ocrText\n")
                 }
-                sb.appendLine()
-                sb.appendLine("Task: Answer the user's question about the image. Prefer short direct answers. When asked to describe, list visible objects, notable attributes (color, count, relative position), and any readable text. Do not mention file names, pixel dimensions, or internal metadata unless asked.")
-                sb.appendLine("Return format: Provide a single-line JSON object with these keys: 'objects' (array of short object descriptions), 'attributes' (short comma-separated notable attributes), 'text' (OCR transcription or empty string). If you cannot answer, return exactly: {\"objects\": [], \"attributes\": \"\", \"text\": \"I don't know based on the image.\"}.")
-                sb.appendLine()
-                sb.appendLine("EXAMPLES:")
-                sb.appendLine("Image: [photo of a storefront with a sign reading 'Cafe Luna']\nQ: What does the sign say?\nA: The sign reads 'Cafe Luna.'")
-                sb.appendLine("Image: [photo of a soccer ball next to a red backpack]\nQ: What objects are in the image?\nA: A soccer ball (black/white) and a red backpack to its right.")
-                sb.appendLine()
-                sb.appendLine("User question: $promptText")
-                sb.appendLine()
-                sb.appendLine("Answer:")
+                sb.append("\n")
+                sb.append("$promptText\n") // User's simple question
+                sb.append("<|end|>\n") // End user message
+                sb.append("<|assistant|>\n") // Start assistant message (for generation)
 
                 val augmentedPrompt = sb.toString()
 
