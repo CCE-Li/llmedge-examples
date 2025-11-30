@@ -33,10 +33,21 @@ class VideoGenerationActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "VideoGenerationActivity"
         private const val DEFAULT_PROMPT = "A dog running in the park"
+        private const val DEFAULT_WIDTH = 512
+        private const val DEFAULT_HEIGHT = 512
+        private const val DEFAULT_STEPS = 20
+        private const val DEFAULT_CFG = 7.0f
+        private const val DEFAULT_SEED = -1L
         private const val BYTES_IN_MB = 1024L * 1024L
     }
 
     private val promptInput: EditText by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoPromptInput) }
+    private val widthInput: EditText by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoWidthInput) }
+    private val heightInput: EditText by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoHeightInput) }
+    private val stepsInput: EditText by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoStepsInput) }
+    private val cfgInput: EditText by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoCfgInput) }
+    private val seedInput: EditText by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoSeedInput) }
+    private val flowShiftInput: EditText by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoFlowShiftInput) }
     private val generateButton: Button by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.btnGenerateVideo) }
     private val cancelButton: Button by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.btnCancelVideo) }
     private val progressBar: ProgressBar by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoProgressBar) }
@@ -73,6 +84,13 @@ class VideoGenerationActivity : AppCompatActivity() {
             return
         }
 
+        val width = parseDimensionField(widthInput, DEFAULT_WIDTH, "Width") ?: return
+        val height = parseDimensionField(heightInput, DEFAULT_HEIGHT, "Height") ?: return
+        val steps = parseStepsField() ?: return
+        val cfg = parseCfgField() ?: return
+        val seed = parseSeedField() ?: return
+        val flowShift = parseFlowShiftField() ?: return
+
         // Check if we have enough memory
         val isLowMem = isLowMemoryDevice()
         val availMemMB = getAvailableMemoryMB()
@@ -105,11 +123,13 @@ class VideoGenerationActivity : AppCompatActivity() {
                 // Width must be between 256-960 for Wan 2.1
                 val params = LLMEdgeManager.VideoGenerationParams(
                     prompt = prompt,
-                    width = 480,      // Balanced size for mobile
-                    height = 480,
+                    width = width,
+                    height = height,
                     videoFrames = 8,  // Start with fewer frames
-                    steps = 15,       // Reduced steps for faster generation
-                    cfgScale = 7.0f,
+                    steps = steps,
+                    cfgScale = cfg,
+                    seed = seed,
+                    flowShift = flowShift,
                     flashAttn = true,
                     forceSequentialLoad = true  // Always use sequential for safety
                 )
@@ -180,6 +200,71 @@ class VideoGenerationActivity : AppCompatActivity() {
                 progressBar.progress = percent
             }
             progressLabel.text = status
+        }
+    }
+
+    private fun parseDimensionField(field: EditText, defaultValue: Int, label: String): Int? {
+        val value = field.text.toString().ifBlank { defaultValue.toString() }.toIntOrNull()
+        return if (value == null || value !in 256..960 || value % 64 != 0) {
+            field.error = "$label must be a multiple of 64 between 256 and 960"
+            field.requestFocus()
+            null
+        } else {
+            field.error = null
+            value
+        }
+    }
+
+    private fun parseStepsField(): Int? {
+        val value = stepsInput.text.toString().ifBlank { DEFAULT_STEPS.toString() }.toIntOrNull()
+        return if (value == null || value !in 10..50) {
+            stepsInput.error = "Steps must be between 10 and 50"
+            stepsInput.requestFocus()
+            null
+        } else {
+            stepsInput.error = null
+            value
+        }
+    }
+
+    private fun parseCfgField(): Float? {
+        val value = cfgInput.text.toString().ifBlank { DEFAULT_CFG.toString() }.toFloatOrNull()
+        return if (value == null || value !in 1.0f..15.0f) {
+            cfgInput.error = "CFG must be between 1.0 and 15.0"
+            cfgInput.requestFocus()
+            null
+        } else {
+            cfgInput.error = null
+            value
+        }
+    }
+
+    private fun parseSeedField(): Long? {
+        val value = seedInput.text.toString().ifBlank { DEFAULT_SEED.toString() }.toLongOrNull()
+        return if (value == null || value < -1L) {
+            seedInput.error = "Seed must be -1 or non-negative"
+            seedInput.requestFocus()
+            null
+        } else {
+            seedInput.error = null
+            value
+        }
+    }
+
+    private fun parseFlowShiftField(): Float? {
+        val raw = flowShiftInput.text.toString().trim()
+        if (raw.isBlank()) {
+            flowShiftInput.error = null
+            return Float.POSITIVE_INFINITY
+        }
+        val value = raw.toFloatOrNull()
+        return if (value == null || value <= 0f) {
+            flowShiftInput.error = "Flow shift must be greater than 0"
+            flowShiftInput.requestFocus()
+            null
+        } else {
+            flowShiftInput.error = null
+            value
         }
     }
 

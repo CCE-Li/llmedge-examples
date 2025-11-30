@@ -235,9 +235,11 @@ val frames = LLMEdgeManager.generateVideo(
     params = LLMEdgeManager.VideoGenerationParams(
         prompt = "cat walking through garden",
         videoFrames = 8,
-        width = 480,
-        height = 480,
+        width = 512,
+        height = 512,
         steps = 20,
+        cfgScale = 7.0f,
+        flowShift = 3.0f,
         forceSequentialLoad = true // Safe for most devices
     )
 ) { status, current, total ->

@@ -32,10 +32,20 @@ class ImageGenerationActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "ImageGenerationActivity"
         private const val DEFAULT_PROMPT = "A futuristic city"
+        private const val DEFAULT_WIDTH = 512
+        private const val DEFAULT_HEIGHT = 512
+        private const val DEFAULT_STEPS = 20
+        private const val DEFAULT_CFG = 7.0f
+        private const val DEFAULT_SEED = -1L
         private const val BYTES_IN_MB = 1024L * 1024L
     }
 
     private val promptInput: EditText by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoPromptInput) }
+    private val widthInput: EditText by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.imageWidthInput) }
+    private val heightInput: EditText by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.imageHeightInput) }
+    private val stepsInput: EditText by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.imageStepsInput) }
+    private val cfgInput: EditText by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.imageCfgInput) }
+    private val seedInput: EditText by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.imageSeedInput) }
     private val generateButton: Button by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.btnGenerateVideo) }
     private val cancelButton: Button by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.btnCancelVideo) }
     private val progressBar: ProgressBar by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoProgressBar) }
@@ -71,6 +81,12 @@ class ImageGenerationActivity : AppCompatActivity() {
             return
         }
 
+        val width = parseDimensionField(widthInput, DEFAULT_WIDTH, "Width") ?: return
+        val height = parseDimensionField(heightInput, DEFAULT_HEIGHT, "Height") ?: return
+        val steps = parseStepsField() ?: return
+        val cfg = parseCfgField() ?: return
+        val seed = parseSeedField() ?: return
+
         // Check available memory
         val availMemMB = getAvailableMemoryMB()
         android.util.Log.i(TAG, "Starting generation with ${availMemMB}MB available")
@@ -99,17 +115,16 @@ class ImageGenerationActivity : AppCompatActivity() {
 
                 updateProgressUI(0, "Preparing...")
 
-                
+                val useFlashAttn = width >= 512 && height >= 512
+
                 val params = LLMEdgeManager.ImageGenerationParams(
                     prompt = prompt,
-                    width = 128,
-                    height = 128,
-                    steps = 15,
-                    cfgScale = 7.0f,
-                    // Disable flash attention explicitly for small images to avoid
-                    // inefficiencies on mobile GPUs; LLMEdgeManager will also auto-disable
-                    // based on dimensions, but we enforce it here to ensure the correct path.
-                    flashAttn = false,
+                    width = width,
+                    height = height,
+                    steps = steps,
+                    cfgScale = cfg,
+                    seed = seed,
+                    flashAttn = useFlashAttn,
                     forceSequentialLoad = false
                 )
 
@@ -177,6 +192,54 @@ class ImageGenerationActivity : AppCompatActivity() {
                 progressBar.progress = percent
             }
             progressLabel.text = status
+        }
+    }
+
+    private fun parseDimensionField(field: EditText, defaultValue: Int, label: String): Int? {
+        val value = field.text.toString().ifBlank { defaultValue.toString() }.toIntOrNull()
+        return if (value == null || value !in 128..1024 || value % 8 != 0) {
+            field.error = "$label must be a multiple of 8 between 128 and 1024"
+            field.requestFocus()
+            null
+        } else {
+            field.error = null
+            value
+        }
+    }
+
+    private fun parseStepsField(): Int? {
+        val value = stepsInput.text.toString().ifBlank { DEFAULT_STEPS.toString() }.toIntOrNull()
+        return if (value == null || value !in 1..50) {
+            stepsInput.error = "Steps must be between 1 and 50"
+            stepsInput.requestFocus()
+            null
+        } else {
+            stepsInput.error = null
+            value
+        }
+    }
+
+    private fun parseCfgField(): Float? {
+        val value = cfgInput.text.toString().ifBlank { DEFAULT_CFG.toString() }.toFloatOrNull()
+        return if (value == null || value !in 1.0f..15.0f) {
+            cfgInput.error = "CFG must be between 1.0 and 15.0"
+            cfgInput.requestFocus()
+            null
+        } else {
+            cfgInput.error = null
+            value
+        }
+    }
+
+    private fun parseSeedField(): Long? {
+        val value = seedInput.text.toString().ifBlank { DEFAULT_SEED.toString() }.toLongOrNull()
+        return if (value == null || value < -1L) {
+            seedInput.error = "Seed must be -1 or non-negative"
+            seedInput.requestFocus()
+            null
+        } else {
+            seedInput.error = null
+            value
         }
     }
 
