@@ -38,12 +38,16 @@ class VideoGenerationActivity : AppCompatActivity() {
         private const val DEFAULT_STEPS = 20
         private const val DEFAULT_CFG = 7.0f
         private const val DEFAULT_SEED = -1L
+        private const val DEFAULT_FRAMES = 8
+        private const val DEFAULT_FPS = 8
         private const val BYTES_IN_MB = 1024L * 1024L
     }
 
     private val promptInput: EditText by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoPromptInput) }
     private val widthInput: EditText by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoWidthInput) }
     private val heightInput: EditText by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoHeightInput) }
+    private val framesInput: EditText by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoFramesInput) }
+    private val fpsInput: EditText by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoFpsInput) }
     private val stepsInput: EditText by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoStepsInput) }
     private val cfgInput: EditText by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoCfgInput) }
     private val seedInput: EditText by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoSeedInput) }
@@ -56,6 +60,7 @@ class VideoGenerationActivity : AppCompatActivity() {
     private val metricsLabel: TextView by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoMetricsLabel) }
 
     private var generationJob: Job? = null
+    private var animationJob: Job? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -83,9 +88,14 @@ class VideoGenerationActivity : AppCompatActivity() {
             Toast.makeText(this, R.string.video_status_generation_running, Toast.LENGTH_SHORT).show()
             return
         }
+        
+        // Stop any previous animation
+        animationJob?.cancel()
 
         val width = parseDimensionField(widthInput, DEFAULT_WIDTH, "Width") ?: return
         val height = parseDimensionField(heightInput, DEFAULT_HEIGHT, "Height") ?: return
+        val framesCount = parseFramesField() ?: return
+        val fps = parseFpsField() ?: return
         val steps = parseStepsField() ?: return
         val cfg = parseCfgField() ?: return
         val seed = parseSeedField() ?: return
@@ -125,7 +135,7 @@ class VideoGenerationActivity : AppCompatActivity() {
                     prompt = prompt,
                     width = width,
                     height = height,
-                    videoFrames = 8,  // Start with fewer frames
+                    videoFrames = framesCount,
                     steps = steps,
                     cfgScale = cfg,
                     seed = seed,
@@ -155,13 +165,22 @@ class VideoGenerationActivity : AppCompatActivity() {
 
                 if (frames.isNotEmpty()) {
                     withContext(Dispatchers.Main) {
-                        previewImage.setImageBitmap(frames.first())
-                        
                         // Show metrics if available
                         val metrics = LLMEdgeManager.getLastDiffusionMetrics()
                         metrics?.let {
                             metricsLabel.text = "Generated ${frames.size} frames in ${String.format("%.1f", it.totalTimeSeconds)}s"
                             metricsLabel.visibility = View.VISIBLE
+                        }
+                        
+                        // Start animation
+                        val frameDuration = 1000L / fps
+                        animationJob = lifecycleScope.launch {
+                            while (true) {
+                                frames.forEach { frame ->
+                                    previewImage.setImageBitmap(frame)
+                                    kotlinx.coroutines.delay(frameDuration)
+                                }
+                            }
                         }
                     }
                 }
@@ -194,6 +213,7 @@ class VideoGenerationActivity : AppCompatActivity() {
 
     private fun cancelGeneration() {
         generationJob?.cancel()
+        animationJob?.cancel()
         LLMEdgeManager.cancelGeneration()
         updateProgressUI(0, getString(R.string.video_status_cancelled))
     }
@@ -217,6 +237,30 @@ class VideoGenerationActivity : AppCompatActivity() {
             null
         } else {
             field.error = null
+            value
+        }
+    }
+
+    private fun parseFramesField(): Int? {
+        val value = framesInput.text.toString().ifBlank { DEFAULT_FRAMES.toString() }.toIntOrNull()
+        return if (value == null || value !in 4..64) {
+            framesInput.error = "Frames must be between 4 and 64"
+            framesInput.requestFocus()
+            null
+        } else {
+            framesInput.error = null
+            value
+        }
+    }
+
+    private fun parseFpsField(): Int? {
+        val value = fpsInput.text.toString().ifBlank { DEFAULT_FPS.toString() }.toIntOrNull()
+        return if (value == null || value !in 1..30) {
+            fpsInput.error = "FPS must be between 1 and 30"
+            fpsInput.requestFocus()
+            null
+        } else {
+            fpsInput.error = null
             value
         }
     }

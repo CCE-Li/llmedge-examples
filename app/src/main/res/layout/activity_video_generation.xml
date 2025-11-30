@@ -65,6 +65,36 @@
             android:layout_marginTop="8dp">
 
             <EditText
+                android:id="@+id/videoFramesInput"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:hint="Frames (8-64)"
+                android:inputType="number"
+                android:text="8"
+                android:background="@android:drawable/edit_text"
+                android:padding="12dp" />
+
+            <EditText
+                android:id="@+id/videoFpsInput"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:hint="FPS (1-30)"
+                android:inputType="number"
+                android:text="8"
+                android:background="@android:drawable/edit_text"
+                android:padding="12dp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="8dp">
+
+            <EditText
                 android:id="@+id/videoStepsInput"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
