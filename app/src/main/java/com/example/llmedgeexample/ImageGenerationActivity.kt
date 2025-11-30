@@ -10,6 +10,7 @@ import android.widget.ImageView
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
+import android.widget.Switch
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import io.aatricks.llmedge.LLMEdgeManager
@@ -52,6 +53,7 @@ class ImageGenerationActivity : AppCompatActivity() {
     private val progressLabel: TextView by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoProgressLabel) }
     private val previewImage: ImageView by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoPreview) }
     private val metricsLabel: TextView by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoMetricsLabel) }
+    private val loraToggle: Switch by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.loraToggle) }
 
     private var generationJob: Job? = null
 
@@ -70,6 +72,15 @@ class ImageGenerationActivity : AppCompatActivity() {
 
         generateButton.setOnClickListener { startGeneration() }
         cancelButton.setOnClickListener { cancelGeneration() }
+
+        loraToggle.setOnCheckedChangeListener { _, isChecked ->
+            // Optionally, provide feedback to the user or log the state change
+            if (isChecked) {
+                Toast.makeText(this, "Detail Tweaker LoRA Enabled", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "Detail Tweaker LoRA Disabled", Toast.LENGTH_SHORT).show()
+            }
+        }
 
         // Log initial memory state
         logMemoryState("Activity created")
@@ -108,7 +119,32 @@ class ImageGenerationActivity : AppCompatActivity() {
         // Dispatchers.Default is CPU-bound and has limited parallelism (core count)
         generationJob = lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val prompt = promptInput.text.toString().ifBlank { DEFAULT_PROMPT }
+                var prompt = promptInput.text.toString().ifBlank { DEFAULT_PROMPT }
+                var loraModelDir: String? = null
+                
+                if (loraToggle.isChecked) {
+                    updateProgressUI(0, "Checking LoRA model...")
+                    try {
+                        val result = io.aatricks.llmedge.huggingface.HuggingFaceHub.ensureRepoFileOnDisk(
+                            context = applicationContext,
+                            modelId = "imagepipeline/Detail-Tweaker-LoRA-SD1.5",
+                            filename = null, // Auto-detect largest safetensors
+                            preferSystemDownloader = true,
+                            onProgress = { downloaded, total ->
+                                val percent = if (total != null && total > 0) (downloaded * 100 / total).toInt() else 0
+                                updateProgressUI(0, "Downloading LoRA: $percent%")
+                            }
+                        )
+                        loraModelDir = result.file.parentFile.absolutePath
+                        val loraName = result.file.nameWithoutExtension
+                        prompt += " <lora:$loraName:1.0>"
+                    } catch (e: Exception) {
+                        android.util.Log.e(TAG, "Failed to download LoRA", e)
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(this@ImageGenerationActivity, "Failed to download LoRA: ${e.message}", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
                 
                 // Log memory before generation
                 logMemoryState("Before image generation")
@@ -116,6 +152,8 @@ class ImageGenerationActivity : AppCompatActivity() {
                 updateProgressUI(0, "Preparing...")
 
                 val useFlashAttn = width >= 512 && height >= 512
+
+                val loraApplyMode = io.aatricks.llmedge.StableDiffusion.LoraApplyMode.AUTO
 
                 val params = LLMEdgeManager.ImageGenerationParams(
                     prompt = prompt,
@@ -125,7 +163,9 @@ class ImageGenerationActivity : AppCompatActivity() {
                     cfgScale = cfg,
                     seed = seed,
                     flashAttn = useFlashAttn,
-                    forceSequentialLoad = false
+                    forceSequentialLoad = false,
+                    loraModelDir = loraModelDir,
+                    loraApplyMode = loraApplyMode
                 )
 
                 val bitmap = LLMEdgeManager.generateImage(

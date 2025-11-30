@@ -132,6 +132,12 @@ class VideoGenerationActivity : AppCompatActivity() {
                     flowShift = flowShift,
                     flashAttn = true,
                     forceSequentialLoad = true  // Always use sequential for safety
+                    ,
+                    // Demonstrate easy cache usage (improves perf for repeated text conditions)
+                    easyCache = io.aatricks.llmedge.StableDiffusion.EasyCacheParams(enabled = true, reuseThreshold = 0.2f, startPercent = 0.15f, endPercent = 0.95f),
+                    // Example LoRA: provide a local folder on the device containing LoRA weights
+                    loraModelDir = getExternalFilesDir("loras")?.absolutePath,
+                    loraApplyMode = io.aatricks.llmedge.StableDiffusion.LoraApplyMode.AUTO
                 )
 
                 updateProgressUI(0, "Preparing model...")
