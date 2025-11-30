@@ -153,7 +153,7 @@ class VideoGenerationRealE2ETest {
                 modelPath = modelFile.file.absolutePath,
                 vaePath = vaeFile.file.absolutePath,
                 t5xxlPath = t5xxlFile.file.absolutePath,
-                nThreads = Runtime.getRuntime().availableProcessors(),
+                nThreads = io.aatricks.llmedge.CpuTopology.getOptimalThreadCount(io.aatricks.llmedge.CpuTopology.TaskType.DIFFUSION),
                 offloadToCpu = true,
                 keepClipOnCpu = true,
                 keepVaeOnCpu = true,

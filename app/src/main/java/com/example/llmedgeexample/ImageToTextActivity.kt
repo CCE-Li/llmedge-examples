@@ -22,20 +22,18 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.CoroutineExceptionHandler
-import io.aatricks.llmedge.vision.ImageSource
 import io.aatricks.llmedge.vision.ImageUtils
-import io.aatricks.llmedge.vision.ocr.MlKitOcrEngine
+import io.aatricks.llmedge.LLMEdgeManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 class ImageToTextActivity : AppCompatActivity() {
-    private lateinit var btnTake: Button
-    private lateinit var ivPreview: ImageView
-    private lateinit var tvResult: TextView
-    private lateinit var progress: ProgressBar
+    private val btnTake: Button by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.btnTakePicture) }
+    private val ivPreview: ImageView by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.ivPreview) }
+    private val tvResult: TextView by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.tvTextResult) }
+    private val progress: ProgressBar by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.progress) }
 
     private val TAG = "ImageToTextActivity"
-    private val ocrEngine by lazy { MlKitOcrEngine(this) }
 
     private var photoUri: Uri? = null
     private var photoFile: File? = null
@@ -69,10 +67,7 @@ class ImageToTextActivity : AppCompatActivity() {
         Log.d(TAG, "onCreate")
         setContentView(R.layout.activity_image_to_text)
 
-        btnTake = findViewById(R.id.btnTakePicture)
-        ivPreview = findViewById(R.id.ivPreview)
-        tvResult = findViewById(R.id.tvTextResult)
-        progress = findViewById(R.id.progress)
+        // Views are initialized lazily via delegates
 
         btnTake.setOnClickListener {
             // Request camera permission if needed
@@ -157,10 +152,10 @@ class ImageToTextActivity : AppCompatActivity() {
         lifecycleScope.launch(Dispatchers.Main + handler) {
             try {
                 val start = System.currentTimeMillis()
-                val result = ocrEngine.extractText(ImageSource.BitmapSource(bitmap))
+                val text = LLMEdgeManager.extractText(this@ImageToTextActivity, bitmap)
                 val dur = System.currentTimeMillis() - start
-                Log.d(TAG, "OCR completed in ${dur}ms, engine=${result.engine}, textLength=${result.text.length}")
-                tvResult.text = result.text.ifEmpty { "(no text detected)" }
+                Log.d(TAG, "OCR completed in ${dur}ms, textLength=${text.length}")
+                tvResult.text = text.ifEmpty { "(no text detected)" }
             } catch (e: Exception) {
                 Log.e(TAG, "OCR failed", e)
                 tvResult.text = "OCR failed: ${e.message}"
@@ -172,11 +167,6 @@ class ImageToTextActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        try {
-            Log.d(TAG, "onDestroy: closing OCR engine")
-            ocrEngine.close()
-        } catch (e: Exception) {
-            Log.w(TAG, "Error closing OCR engine", e)
-        }
+        // LLMEdgeManager manages the engine lifecycle
     }
 }

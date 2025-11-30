@@ -1,7 +1,8 @@
 package com.example.llmedgeexample
 
+import android.app.ActivityManager
+import android.content.Context
 import android.os.Bundle
-import android.view.MenuItem
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
@@ -9,19 +10,27 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import io.aatricks.llmedge.LLMEdgeManager
 import io.aatricks.llmedge.SmolLM
-import io.aatricks.llmedge.SmolLM.InferenceParams
-import io.aatricks.llmedge.SmolLM.ThinkingMode
+import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlin.math.max
-import kotlin.math.min
-import java.util.Locale
 
+/**
+ * Activity demonstrating downloading and running custom models from Hugging Face.
+ * 
+ * Features:
+ * - Custom model download with progress
+ * - Configurable thinking mode and reasoning budget
+ * - Memory-efficient text generation
+ */
 class HuggingFaceDemoActivity : AppCompatActivity() {
 
-    private val llm = SmolLM()
+    companion object {
+        private const val TAG = "HuggingFaceDemoActivity"
+        private const val BYTES_IN_MB = 1024L * 1024L
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -45,7 +54,8 @@ class HuggingFaceDemoActivity : AppCompatActivity() {
             val filename = inputFilename.text.toString().trim().takeIf { it.isNotEmpty() }
             val disableThinkingChecked = disableThinking.isChecked
             val reasoningBudgetText = inputReasoningBudget.text.toString().trim()
-            val parsedReasoningBudget = reasoningBudgetText.takeIf { it.isNotEmpty() }?.toIntOrNull()
+            val parsedReasoningBudget =
+                    reasoningBudgetText.takeIf { it.isNotEmpty() }?.toIntOrNull()
 
             if (modelId.isEmpty()) {
                 if (isUiActive()) {
@@ -61,6 +71,14 @@ class HuggingFaceDemoActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
 
+            // Check available memory before starting
+            val availMemMB = getAvailableMemoryMB()
+            if (availMemMB < 1500) {
+                if (isUiActive()) {
+                    textStatus.text = "Warning: Low memory (${availMemMB}MB). Close other apps."
+                }
+            }
+
             if (isUiActive()) {
                 textStatus.text = "Starting download..."
                 textOutput.text = ""
@@ -69,33 +87,15 @@ class HuggingFaceDemoActivity : AppCompatActivity() {
 
             lifecycleScope.launch {
                 try {
-                    withContext(Dispatchers.Default) {
-                        llm.close()
-                    }
-
-                    val heapMb = Runtime.getRuntime().maxMemory() / (1024 * 1024)
-                    val safeContext = when {
-                        heapMb <= 256 -> 2_048L
-                        heapMb <= 384 -> 4_096L
-                        else -> 6_144L
-                    }
-                    val safeThreads = min(max(Runtime.getRuntime().availableProcessors(), 1), 4)
-
-                    val safeParams = InferenceParams(
-                        storeChats = false,
-                        numThreads = safeThreads,
-                        contextSize = safeContext,
-                        thinkingMode = if (disableThinkingChecked) ThinkingMode.DISABLED else ThinkingMode.DEFAULT,
-                        reasoningBudget = parsedReasoningBudget,
-                    )
-
-                    val result = llm.loadFromHuggingFace(
+                    // Log memory state
+                    logMemoryState("Before download")
+                    
+                    // 1. Download/Ensure model is available
+                    val modelFile = LLMEdgeManager.downloadModel(
                         context = this@HuggingFaceDemoActivity,
                         modelId = modelId,
-                        revision = revision,
                         filename = filename,
-                        params = safeParams,
-                        forceDownload = forceDownload.isChecked,
+                        revision = revision,
                         onProgress = { downloaded, total ->
                             runOnUiThread {
                                 if (isUiActive()) {
@@ -104,45 +104,72 @@ class HuggingFaceDemoActivity : AppCompatActivity() {
                             }
                         }
                     )
-                    val cacheStatus = if (result.fromCache) "(cached)" else "(downloaded)"
-                    val resolvedLabel =
-                        if (result.aliasApplied && !result.requestedModelId.equals(result.modelId, ignoreCase = true)) {
-                            "${result.modelId} (alias for ${result.requestedModelId})"
-                        } else {
-                            result.modelId
-                        }
+
                     if (isUiActive()) {
                         textStatus.text = buildString {
-                            append("Model ready $cacheStatus from $resolvedLabel: ${result.file.name}\n")
-                            append("Heap allowance: ${heapMb}MB\n")
-                            append("Context: ${safeParams.contextSize} tokens | Threads: ${safeParams.numThreads}\n")
-                            append("Thinking enabled: ${llm.isThinkingEnabled()} (budget=${llm.getReasoningBudget()})")
+                            append("Model ready: ${modelFile.name}\n")
+                            append("Path: ${modelFile.absolutePath}\n")
                         }
                     }
 
-                    llm.addSystemPrompt("You are a concise assistant running on-device.")
+                    logMemoryState("After download, before generation")
 
-                    val response = withContext(Dispatchers.Default) {
-                        llm.getResponse("List two quick facts about running GGUF models on Android.")
+                    // 2. Generate Text
+                    val thinkingMode = if (disableThinkingChecked)
+                        SmolLM.ThinkingMode.DISABLED
+                    else 
+                        SmolLM.ThinkingMode.DEFAULT
+
+                    val params = LLMEdgeManager.TextGenerationParams(
+                        prompt = "List two quick facts about running GGUF models on Android.",
+                        systemPrompt = "You are a concise assistant running on-device.",
+                        modelPath = modelFile.absolutePath,
+                        modelId = modelId,
+                        modelFilename = filename ?: modelFile.name,
+                        revision = revision,
+                        thinkingMode = thinkingMode,
+                        reasoningBudget = parsedReasoningBudget
+                    )
+
+                    // Use IO dispatcher for native JNI operations
+                    val response = withContext(Dispatchers.IO) {
+                        LLMEdgeManager.generateText(
+                            context = this@HuggingFaceDemoActivity,
+                            params = params
+                        )
                     }
-                    val metrics = llm.getLastGenerationMetrics()
+
+                    val metrics = LLMEdgeManager.getLastTextGenerationMetrics()
+                    
+                    logMemoryState("After generation")
+
                     if (isUiActive()) {
                         textOutput.text = buildString {
                             appendLine("Response:")
                             appendLine()
                             appendLine(response.trim())
                             appendLine()
-                            appendLine(
-                                "Metrics: tokens=${metrics.tokenCount}, " +
-                                    "throughput=${"%.2f".format(Locale.US, metrics.tokensPerSecond)} tok/s, " +
-                                    "duration=${"%.2f".format(Locale.US, metrics.elapsedSeconds)} s",
-                            )
-                            appendLine("Thinking mode: ${llm.getThinkingMode()} (budget=${llm.getReasoningBudget()})")
+                            metrics?.let {
+                                appendLine(
+                                    "Metrics: tokens=${it.tokenCount}, " +
+                                    "throughput=${"%.2f".format(Locale.US, it.tokensPerSecond)} tok/s, " +
+                                    "duration=${"%.2f".format(Locale.US, it.elapsedSeconds)} s"
+                                )
+                            }
+                            appendLine("Thinking mode: $thinkingMode (budget=$parsedReasoningBudget)")
                             appendLine()
-                            append("Stored at: ${result.file.absolutePath}")
+                            append("Stored at: ${modelFile.absolutePath}")
                         }
                     }
+                } catch (oom: OutOfMemoryError) {
+                    android.util.Log.e(TAG, "Out of memory", oom)
+                    logMemoryState("OOM error")
+                    if (isUiActive()) {
+                        textStatus.text = "Out of memory. Try a smaller model or close other apps."
+                        textOutput.text = ""
+                    }
                 } catch (t: Throwable) {
+                    android.util.Log.e(TAG, "Failed", t)
                     if (isUiActive()) {
                         textStatus.text = "Failed: ${t.message}"
                         textOutput.text = ""
@@ -161,11 +188,6 @@ class HuggingFaceDemoActivity : AppCompatActivity() {
         return true
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        llm.close()
-    }
-
     private fun formatProgress(downloaded: Long, total: Long?): String {
         val downloadedMb = downloaded / (1024.0 * 1024.0)
         val totalMb = total?.div(1024.0 * 1024.0)
@@ -177,7 +199,29 @@ class HuggingFaceDemoActivity : AppCompatActivity() {
     }
 
     private fun isUiActive(): Boolean =
-    lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) &&
-            !isFinishing &&
-            !isDestroyed
+            lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) &&
+                    !isFinishing &&
+                    !isDestroyed
+
+    private fun getAvailableMemoryMB(): Long {
+        val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val memInfo = ActivityManager.MemoryInfo()
+        activityManager.getMemoryInfo(memInfo)
+        return memInfo.availMem / BYTES_IN_MB
+    }
+
+    private fun logMemoryState(phase: String) {
+        val runtime = Runtime.getRuntime()
+        val heapUsed = (runtime.totalMemory() - runtime.freeMemory()) / BYTES_IN_MB
+        val heapMax = runtime.maxMemory() / BYTES_IN_MB
+
+        val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val memoryInfo = ActivityManager.MemoryInfo()
+        activityManager.getMemoryInfo(memoryInfo)
+        val systemAvail = memoryInfo.availMem / BYTES_IN_MB
+
+        android.util.Log.i(TAG, "=== Memory: $phase ===")
+        android.util.Log.i(TAG, "  Heap: ${heapUsed}MB / ${heapMax}MB max")
+        android.util.Log.i(TAG, "  System: ${systemAvail}MB available")
+    }
 }

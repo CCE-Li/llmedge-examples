@@ -1,24 +1,36 @@
 package com.example.llmedgeexample
 
+import android.app.ActivityManager
+import android.content.Context
 import android.os.Bundle
-import android.view.MenuItem
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import io.aatricks.llmedge.LLMEdgeManager
 import io.aatricks.llmedge.SmolLM
-import io.aatricks.llmedge.SmolLM.InferenceParams
 import io.aatricks.llmedge.util.MemoryMetrics
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.util.Locale
 
+/**
+ * Activity demonstrating loading and running a model from local assets.
+ * 
+ * Features:
+ * - Blocking and streaming generation modes
+ * - Memory metrics display
+ * - Timeout handling for generation
+ */
 class LocalAssetDemoActivity : AppCompatActivity() {
 
-    private val llm = SmolLM()
+    companion object {
+        private const val TAG = "LocalAssetDemoActivity"
+        private const val BYTES_IN_MB = 1024L * 1024L
+        private const val GENERATION_TIMEOUT_MS = 60_000L // 60 seconds
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -29,79 +41,127 @@ class LocalAssetDemoActivity : AppCompatActivity() {
         val output = findViewById<TextView>(R.id.output)
 
         lifecycleScope.launch {
-            val before = MemoryMetrics.snapshot(this@LocalAssetDemoActivity)
-            withContext(Dispatchers.Main) {
-                output.text = "Vulkan enabled: ${llm.isVulkanEnabled()}\n" +
-                    before.toPretty(this@LocalAssetDemoActivity) + "\n\n"
-            }
-
-            val modelPath = copyAssetIfNeeded("YourModel.gguf")
-            val modelFile = File(modelPath)
-            withContext(Dispatchers.Main) {
-                output.append(
-                    "Preparing model...\nPath: $modelPath\nExists: ${modelFile.exists()}\nSize: ${if (modelFile.exists()) "${modelFile.length() / (1024 * 1024)} MB" else "n/a"}\n\n",
-                )
-            }
-
             try {
-                llm.load(
-                    modelPath = modelPath,
-                    params = InferenceParams(
-                        numThreads = Runtime.getRuntime().availableProcessors().coerceAtMost(4),
-                        contextSize = 8192L,
+                val before = MemoryMetrics.snapshot(this@LocalAssetDemoActivity)
+                withContext(Dispatchers.Main) {
+                    output.text = "Memory before:\n" +
+                        before.toPretty(this@LocalAssetDemoActivity) + "\n\n"
+                }
+
+                val modelPath = copyAssetIfNeeded("YourModel.gguf")
+                val modelFile = File(modelPath)
+                
+                withContext(Dispatchers.Main) {
+                    output.append(
+                        "Preparing model...\nPath: $modelPath\nExists: ${modelFile.exists()}\n" +
+                        "Size: ${if (modelFile.exists()) "${modelFile.length() / (1024 * 1024)} MB" else "n/a"}\n\n"
                     )
+                }
+
+                if (!modelFile.exists()) {
+                    withContext(Dispatchers.Main) {
+                        output.append("\nModel file not found. Please add 'YourModel.gguf' to assets.\n")
+                    }
+                    return@launch
+                }
+
+                // Log memory state
+                logMemoryState("Before model load")
+
+                // Check available memory
+                val availMemMB = getAvailableMemoryMB()
+                if (availMemMB < 1500) {
+                    withContext(Dispatchers.Main) {
+                        output.append("Warning: Low memory (${availMemMB}MB). May experience issues.\n\n")
+                    }
+                }
+
+                // Blocking generation
+                val params = LLMEdgeManager.TextGenerationParams(
+                    prompt = "Say 'hello from llmedge'.",
+                    modelPath = modelPath,
+                    maxTokens = 50 // Limit output for demo
                 )
-                val afterLoad = MemoryMetrics.snapshot(this@LocalAssetDemoActivity)
-                withContext(Dispatchers.Main) {
-                    output.append("Loaded OK.\n\nAfter load:\n" + afterLoad.toPretty(this@LocalAssetDemoActivity) + "\n\n")
-                }
-            } catch (t: Throwable) {
-                withContext(Dispatchers.Main) {
-                    output.append("\nLoad failed: ${t.message}\n")
-                }
-                return@launch
-            }
 
-            llm.addSystemPrompt("You are a helpful assistant.")
+                try {
+                    val blocking = withContext(Dispatchers.IO) {
+                        withTimeoutOrNull(GENERATION_TIMEOUT_MS) {
+                            LLMEdgeManager.generateText(this@LocalAssetDemoActivity, params)
+                        }
+                    }
+                    
+                    if (blocking == null) {
+                        withContext(Dispatchers.Main) {
+                            output.append("Blocking generation timed out.\n\n")
+                        }
+                    } else {
+                        val blockingMetrics = LLMEdgeManager.getLastTextGenerationMetrics()
+                        val afterBlocking = MemoryMetrics.snapshot(this@LocalAssetDemoActivity)
+                        withContext(Dispatchers.Main) {
+                            output.append("Blocking response:\n\n$blocking\n\n")
+                            blockingMetrics?.let { output.append("Blocking metrics: ${formatMetrics(it)}\n\n") }
+                            output.append("After blocking:\n" + afterBlocking.toPretty(this@LocalAssetDemoActivity) + "\n\nStreaming response:\n\n")
+                        }
+                    }
+                } catch (oom: OutOfMemoryError) {
+                    android.util.Log.e(TAG, "OOM during blocking generation", oom)
+                    logMemoryState("OOM error")
+                    withContext(Dispatchers.Main) {
+                        output.append("\nBlocking failed: Out of memory\n")
+                    }
+                    return@launch
+                } catch (t: Throwable) {
+                    android.util.Log.e(TAG, "Blocking generation failed", t)
+                    withContext(Dispatchers.Main) {
+                        output.append("\nBlocking failed: ${t.message}\n")
+                    }
+                }
 
-            try {
-                val blocking = withContext(Dispatchers.Default) {
-                    llm.getResponse("Say 'hello from llmedge'.")
-                }
-                val blockingMetrics = llm.getLastGenerationMetrics()
-                val afterBlocking = MemoryMetrics.snapshot(this@LocalAssetDemoActivity)
-                withContext(Dispatchers.Main) {
-                    output.append("Blocking response:\n\n$blocking\n\n")
-                    output.append("Blocking metrics: ${formatMetrics(blockingMetrics)}\n\n")
-                    output.append("After blocking:\n" + afterBlocking.toPretty(this@LocalAssetDemoActivity) + "\n\nStreaming response:\n\n")
-                }
-            } catch (t: Throwable) {
-                withContext(Dispatchers.Main) {
-                    output.append("\nBlocking failed: ${t.message}\n")
-                }
-            }
-
-            val sb = StringBuilder()
-            val ok = withContext(Dispatchers.Default) {
-                withTimeoutOrNull(30000L) {
-                    llm.getResponseAsFlow("Write a short haiku about Android.")
-                        .collect { piece ->
-                            if (piece != "[EOG]") {
+                // Streaming generation
+                val sb = StringBuilder()
+                val streamParams = LLMEdgeManager.TextGenerationParams(
+                    prompt = "Write a short haiku about Android.",
+                    modelPath = modelPath,
+                    maxTokens = 100 // Limit for demo
+                )
+                
+                val ok = try {
+                    withContext(Dispatchers.IO) {
+                        withTimeoutOrNull(GENERATION_TIMEOUT_MS) {
+                            LLMEdgeManager.generateText(this@LocalAssetDemoActivity, streamParams) { piece ->
                                 sb.append(piece)
-                                withContext(Dispatchers.Main) {
-                                    output.text = output.text.toString().substringBefore("Streaming response:") +
-                                        "Streaming response:\n\n" + sb.toString()
+                                runOnUiThread {
+                                    val currentText = output.text.toString()
+                                    val prefix = currentText.substringBefore("Streaming response:") + "Streaming response:\n\n"
+                                    output.text = prefix + sb.toString()
                                 }
                             }
-                        }
-                } != null
-            }
-            val streamingMetrics = if (ok) llm.getLastGenerationMetrics() else null
-            val afterStream = MemoryMetrics.snapshot(this@LocalAssetDemoActivity)
-            withContext(Dispatchers.Main) {
-                output.append(if (ok) "\n\n[done]\n\n" else "\n\n[stream timed out]\n\n")
-                streamingMetrics?.let { output.append("Streaming metrics: ${formatMetrics(it)}\n\n") }
-                output.append("After streaming:\n" + afterStream.toPretty(this@LocalAssetDemoActivity))
+                            true
+                        } != null
+                    }
+                } catch (oom: OutOfMemoryError) {
+                    android.util.Log.e(TAG, "OOM during streaming", oom)
+                    false
+                } catch (t: Throwable) {
+                    android.util.Log.e(TAG, "Streaming failed", t)
+                    false
+                }
+                
+                val streamingMetrics = if (ok) LLMEdgeManager.getLastTextGenerationMetrics() else null
+                val afterStream = MemoryMetrics.snapshot(this@LocalAssetDemoActivity)
+                
+                logMemoryState("After streaming")
+                
+                withContext(Dispatchers.Main) {
+                    output.append(if (ok) "\n\n[done]\n\n" else "\n\n[stream failed or timed out]\n\n")
+                    streamingMetrics?.let { output.append("Streaming metrics: ${formatMetrics(it)}\n\n") }
+                    output.append("After streaming:\n" + afterStream.toPretty(this@LocalAssetDemoActivity))
+                }
+            } catch (t: Throwable) {
+                android.util.Log.e(TAG, "Activity demo failed", t)
+                withContext(Dispatchers.Main) {
+                    output.append("\n\nError: ${t.message}")
+                }
             }
         }
     }
@@ -111,16 +171,15 @@ class LocalAssetDemoActivity : AppCompatActivity() {
         return true
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        llm.close()
-    }
-
     private fun copyAssetIfNeeded(assetName: String): String {
         val outFile = File(filesDir, assetName)
         if (!outFile.exists()) {
-            assets.open(assetName).use { input ->
-                outFile.outputStream().use { output -> input.copyTo(output) }
+            try {
+                assets.open(assetName).use { input ->
+                    outFile.outputStream().use { output -> input.copyTo(output) }
+                }
+            } catch (e: Exception) {
+                android.util.Log.w(TAG, "Could not copy asset $assetName: ${e.message}")
             }
         }
         return outFile.absolutePath
@@ -130,5 +189,27 @@ class LocalAssetDemoActivity : AppCompatActivity() {
         val throughput = String.format(Locale.US, "%.2f", metrics.tokensPerSecond)
         val duration = String.format(Locale.US, "%.2f", metrics.elapsedSeconds)
         return "tokens=${metrics.tokenCount} | $throughput tok/s | $duration s"
+    }
+
+    private fun getAvailableMemoryMB(): Long {
+        val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val memInfo = ActivityManager.MemoryInfo()
+        activityManager.getMemoryInfo(memInfo)
+        return memInfo.availMem / BYTES_IN_MB
+    }
+
+    private fun logMemoryState(phase: String) {
+        val runtime = Runtime.getRuntime()
+        val heapUsed = (runtime.totalMemory() - runtime.freeMemory()) / BYTES_IN_MB
+        val heapMax = runtime.maxMemory() / BYTES_IN_MB
+
+        val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val memoryInfo = ActivityManager.MemoryInfo()
+        activityManager.getMemoryInfo(memoryInfo)
+        val systemAvail = memoryInfo.availMem / BYTES_IN_MB
+
+        android.util.Log.i(TAG, "=== Memory: $phase ===")
+        android.util.Log.i(TAG, "  Heap: ${heapUsed}MB / ${heapMax}MB max")
+        android.util.Log.i(TAG, "  System: ${systemAvail}MB available")
     }
 }

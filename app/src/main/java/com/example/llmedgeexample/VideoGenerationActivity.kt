@@ -1,5 +1,6 @@
 package com.example.llmedgeexample
 
+import android.app.ActivityManager
 import android.content.Context
 import android.os.Bundle
 import android.view.View
@@ -11,22 +12,37 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
-import io.aatricks.llmedge.StableDiffusion
+import io.aatricks.llmedge.LLMEdgeManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/**
+ * Activity for video generation using Wan 2.1 model.
+ * 
+ * Uses sequential loading on low-memory devices (<8GB RAM):
+ * 1. Load T5 encoder -> Encode prompt -> Unload T5
+ * 2. Load diffusion model + VAE -> Generate frames -> Unload
+ * 
+ * This allows video generation on devices with limited memory.
+ */
 class VideoGenerationActivity : AppCompatActivity() {
 
-    private lateinit var promptInput: EditText
-    private lateinit var generateButton: Button
-    private lateinit var cancelButton: Button
-    private lateinit var progressBar: ProgressBar
-    private lateinit var progressLabel: TextView
-    private lateinit var previewImage: ImageView
-    private lateinit var metricsLabel: TextView
+    companion object {
+        private const val TAG = "VideoGenerationActivity"
+        private const val DEFAULT_PROMPT = "A dog running in the park"
+        private const val BYTES_IN_MB = 1024L * 1024L
+    }
+
+    private val promptInput: EditText by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoPromptInput) }
+    private val generateButton: Button by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.btnGenerateVideo) }
+    private val cancelButton: Button by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.btnCancelVideo) }
+    private val progressBar: ProgressBar by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoProgressBar) }
+    private val progressLabel: TextView by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoProgressLabel) }
+    private val previewImage: ImageView by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoPreview) }
+    private val metricsLabel: TextView by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoMetricsLabel) }
 
     private var generationJob: Job? = null
 
@@ -34,13 +50,11 @@ class VideoGenerationActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_video_generation)
 
-        promptInput = findViewById(R.id.videoPromptInput)
-        generateButton = findViewById(R.id.btnGenerateVideo)
-        cancelButton = findViewById(R.id.btnCancelVideo)
-        progressBar = findViewById(R.id.videoProgressBar)
-        progressLabel = findViewById(R.id.videoProgressLabel)
-        previewImage = findViewById(R.id.videoPreview)
-        metricsLabel = findViewById(R.id.videoMetricsLabel)
+        // Prefer performance mode during interactive examples to favor throughput.
+        // For memory-constrained devices (e.g. 8GB), disable to avoid OOMs during sequential
+        // model loads where CPU offload is required to reduce peak memory usage.
+        val isLowMem = isLowMemoryDevice()
+        io.aatricks.llmedge.LLMEdgeManager.preferPerformanceMode = !isLowMem
 
         progressBar.max = 100
         progressBar.progress = 0
@@ -48,6 +62,9 @@ class VideoGenerationActivity : AppCompatActivity() {
 
         generateButton.setOnClickListener { startGeneration() }
         cancelButton.setOnClickListener { cancelGeneration() }
+
+        // Log initial memory state
+        logMemoryState("Activity created")
     }
 
     private fun startGeneration() {
@@ -56,31 +73,50 @@ class VideoGenerationActivity : AppCompatActivity() {
             return
         }
 
-        // Show loading UI immediately on main thread
+        // Check if we have enough memory
+        val isLowMem = isLowMemoryDevice()
+        val availMemMB = getAvailableMemoryMB()
+        
+        android.util.Log.i(TAG, "Starting generation: isLowMem=$isLowMem, availMem=${availMemMB}MB")
+        
+        if (availMemMB < 1500) {
+            Toast.makeText(
+                this,
+                "Low memory (${availMemMB}MB). Close other apps for better results.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+
         updateProgressUI(0, getString(R.string.video_status_loading_model))
         progressBar.visibility = View.VISIBLE
         progressBar.isIndeterminate = true
         generateButton.isEnabled = false
 
-        generationJob = lifecycleScope.launch(Dispatchers.Default) {
+        // Use Dispatchers.IO for native JNI operations - it has more threads for blocking operations
+        // Dispatchers.Default is CPU-bound and has limited parallelism (core count)
+        generationJob = lifecycleScope.launch(Dispatchers.IO) {
             try {
-                // Aggressive memory management before loading
-                prepareMemoryForLoading()
-
                 val prompt = promptInput.text.toString().ifBlank { DEFAULT_PROMPT }
-                updateProgressUI(0, getString(R.string.video_status_generating))
+                
+                // Log memory before generation
+                logMemoryState("Before video generation")
 
-                val params = StableDiffusion.VideoGenerateParams(
+                // Use sequential loading on low-memory devices (auto-detected)
+                // Width must be between 256-960 for Wan 2.1
+                val params = LLMEdgeManager.VideoGenerationParams(
                     prompt = prompt,
-                    width = 256,
-                    height = 256,
-                    videoFrames = 16,
-                    steps = 20,
+                    width = 480,      // Balanced size for mobile
+                    height = 480,
+                    videoFrames = 8,  // Start with fewer frames
+                    steps = 15,       // Reduced steps for faster generation
                     cfgScale = 7.0f,
+                    flashAttn = true,
+                    forceSequentialLoad = true  // Always use sequential for safety
                 )
 
-                // Use sequential generation to save memory
-                val frames = VideoModelManager.generateVideoSequentially(
+                updateProgressUI(0, "Preparing model...")
+
+                val frames = LLMEdgeManager.generateVideo(
                     context = applicationContext,
                     params = params
                 ) { phase, current, total ->
@@ -88,53 +124,37 @@ class VideoGenerationActivity : AppCompatActivity() {
                     updateProgressUI(0, status)
                 }
 
-                /*
-                val model = ensureModelLoaded()
-                val frames = model.txt2vid(params) { step, totalSteps, currentFrame, totalFrames, _ ->
-                    val percent = ((currentFrame.toFloat() / totalFrames.toFloat()) * 100f).toInt().coerceIn(0, 100)
-                    val status = getString(
-                        R.string.video_status_progress_format,
-                        currentFrame,
-                        totalFrames,
-                        step,
-                        totalSteps,
-                    )
-                    updateProgressUI(percent, status)
-                }
-                */
+                // Log memory after generation
+                logMemoryState("After video generation")
 
                 if (frames.isNotEmpty()) {
                     withContext(Dispatchers.Main) {
                         previewImage.setImageBitmap(frames.first())
+                        
+                        // Show metrics if available
+                        val metrics = LLMEdgeManager.getLastDiffusionMetrics()
+                        metrics?.let {
+                            metricsLabel.text = "Generated ${frames.size} frames in ${String.format("%.1f", it.totalTimeSeconds)}s"
+                            metricsLabel.visibility = View.VISIBLE
+                        }
                     }
                 }
-
-                // Metrics are not directly available from generateVideoSequentially yet
-                // We can retrieve them from the cached model if it's still loaded, or just show success
-                val model = VideoModelManager.getCachedModelOrNull()
-                val metrics = model?.getLastGenerationMetrics()
+                // Log a performance snapshot for debugging purposes
+                LLMEdgeManager.logPerformanceSnapshot()
                 withContext(Dispatchers.Main) {
-                    metricsLabel.text = metrics?.let {
-                        getString(
-                            R.string.video_status_metrics_template,
-                            frames.size,
-                            "%.2f".format(it.framesPerSecond),
-                            "%.2f".format(it.totalTimeSeconds),
-                            it.peakMemoryUsageMb,
-                        )
-                    } ?: getString(R.string.video_status_metrics_pending)
                     updateProgressUI(100, getString(R.string.video_status_complete, frames.size))
                 }
             } catch (cancelled: CancellationException) {
                 updateProgressUI(0, getString(R.string.video_status_cancelled))
             } catch (oom: OutOfMemoryError) {
-                android.util.Log.e("VideoGeneration", "Out of memory during generation", oom)
+                android.util.Log.e(TAG, "Out of memory during generation", oom)
+                logMemoryState("OOM error")
                 updateProgressUI(
                     0,
                     getString(R.string.video_status_failed, "Out of memory. Close other apps and try again.")
                 )
             } catch (t: Throwable) {
-                android.util.Log.e("VideoGeneration", "Failed during generation", t)
+                android.util.Log.e(TAG, "Failed during generation", t)
                 updateProgressUI(0, getString(R.string.video_status_failed, t.localizedMessage ?: "error"))
             } finally {
                 withContext(Dispatchers.Main) {
@@ -146,60 +166,9 @@ class VideoGenerationActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * Prepares memory for model loading by requesting GC and trimming caches
-     */
-    private fun prepareMemoryForLoading() {
-        android.util.Log.d("VideoGeneration", "Preparing memory for model loading")
-
-        // Force garbage collection multiple times
-        System.gc()
-        Thread.sleep(100)
-        System.gc()
-
-        // Trim memory caches
-        // onTrimMemory(android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW)
-
-        // Log memory state
-        val runtime = Runtime.getRuntime()
-        val usedMemMB = (runtime.totalMemory() - runtime.freeMemory()) / (1024 * 1024)
-        val maxMemMB = runtime.maxMemory() / (1024 * 1024)
-        val freeMemMB = maxMemMB - usedMemMB
-
-        android.util.Log.d(
-            "VideoGeneration",
-            "Memory before loading: ${usedMemMB}MB used, ${freeMemMB}MB free of ${maxMemMB}MB max"
-        )
-
-        // Check if we have enough memory
-        val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
-        val memoryInfo = android.app.ActivityManager.MemoryInfo()
-        activityManager.getMemoryInfo(memoryInfo)
-        val availMemMB = memoryInfo.availMem / (1024 * 1024)
-
-        android.util.Log.d("VideoGeneration", "System available memory: ${availMemMB}MB")
-
-        if (availMemMB < 2000) {
-            android.util.Log.w(
-                "VideoGeneration",
-                "Low memory warning: only ${availMemMB}MB available. Model loading may fail."
-            )
-        }
-    }
-
-    private suspend fun ensureModelLoaded(): StableDiffusion {
-        return VideoModelManager.getOrLoadModel(
-            context = applicationContext,
-            forceReload = false
-        ) { phase, current, total ->
-            // updateProgressUI already uses runOnUiThread internally
-            updateProgressUI(0, "$phase ($current/$total)")
-        }
-    }
-
     private fun cancelGeneration() {
         generationJob?.cancel()
-        VideoModelManager.getCachedModelOrNull()?.cancelGeneration()
+        LLMEdgeManager.cancelGeneration()
         updateProgressUI(0, getString(R.string.video_status_cancelled))
     }
 
@@ -219,10 +188,7 @@ class VideoGenerationActivity : AppCompatActivity() {
         when (level) {
             android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW,
             android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL -> {
-                android.util.Log.w(
-                    "VideoGeneration",
-                    "System memory low (level=$level), cancelling generation if active"
-                )
+                android.util.Log.w(TAG, "System memory low (level=$level), cancelling if active")
                 if (generationJob?.isActive == true) {
                     cancelGeneration()
                     runOnUiThread {
@@ -240,11 +206,41 @@ class VideoGenerationActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         generationJob?.cancel()
-        // Model lifecycle is managed by VideoModelManager
-        // Don't close the model here as it may be reused
     }
 
-    companion object {
-        private const val DEFAULT_PROMPT = "A dog running in the park"
+    private fun isLowMemoryDevice(): Boolean {
+        val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val memInfo = ActivityManager.MemoryInfo()
+        activityManager.getMemoryInfo(memInfo)
+        val totalRamGB = memInfo.totalMem / (1024L * 1024L * 1024L)
+        return totalRamGB < 8
+    }
+
+    private fun getAvailableMemoryMB(): Long {
+        val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val memInfo = ActivityManager.MemoryInfo()
+        activityManager.getMemoryInfo(memInfo)
+        return memInfo.availMem / BYTES_IN_MB
+    }
+
+    private fun logMemoryState(phase: String) {
+        val runtime = Runtime.getRuntime()
+        val heapUsed = (runtime.totalMemory() - runtime.freeMemory()) / BYTES_IN_MB
+        val heapMax = runtime.maxMemory() / BYTES_IN_MB
+
+        val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val memoryInfo = ActivityManager.MemoryInfo()
+        activityManager.getMemoryInfo(memoryInfo)
+        val systemAvail = memoryInfo.availMem / BYTES_IN_MB
+        val systemTotal = memoryInfo.totalMem / BYTES_IN_MB
+
+        android.util.Log.i(TAG, "=== Memory: $phase ===")
+        android.util.Log.i(TAG, "  Heap: ${heapUsed}MB / ${heapMax}MB max")
+        android.util.Log.i(TAG, "  System: ${systemAvail}MB / ${systemTotal}MB total")
+
+        // Log Vulkan memory if available
+        LLMEdgeManager.getVulkanDeviceInfo()?.let { vulkan ->
+            android.util.Log.i(TAG, "  Vulkan: ${vulkan.freeMemoryMB}MB / ${vulkan.totalMemoryMB}MB")
+        }
     }
 }

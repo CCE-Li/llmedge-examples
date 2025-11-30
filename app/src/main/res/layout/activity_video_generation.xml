@@ -86,7 +86,8 @@
             android:layout_height="wrap_content"
             android:text="Metrics will appear here after generation"
             android:layout_marginTop="12dp"
-            android:textColor="@android:color/black" />
+            android:textColor="@android:color/black"
+            android:visibility="gone" />
 
     </LinearLayout>
 </ScrollView>

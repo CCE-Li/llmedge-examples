@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <TextView
+            android:id="@+id/videoHeading"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Image Generation"
+            android:textColor="@android:color/black"
+            android:textSize="18sp"
+            android:paddingBottom="12dp" />
+
+        <EditText
+            android:id="@+id/videoPromptInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Describe the scene"
+            android:minLines="2"
+            android:gravity="top"
+            android:background="@android:drawable/edit_text"
+            android:padding="12dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginTop="12dp">
+
+            <Button
+                android:id="@+id/btnGenerateVideo"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Generate Image"
+                android:padding="12dp" />
+
+            <Button
+                android:id="@+id/btnCancelVideo"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="Cancel" />
+        </LinearLayout>
+
+        <ProgressBar
+            android:id="@+id/videoProgressBar"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:max="100"
+            android:progress="0"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/videoProgressLabel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Idle"
+            android:textColor="@android:color/black"
+            android:layout_marginTop="8dp" />
+
+        <ImageView
+            android:id="@+id/videoPreview"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_marginTop="16dp"
+            android:layout_weight="1"
+            android:adjustViewBounds="true"
+            android:background="@android:color/darker_gray"
+            android:contentDescription="Image preview"
+            android:scaleType="centerCrop" />
+
+        <TextView
+            android:id="@+id/videoMetricsLabel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Metrics will appear here after generation"
+            android:layout_marginTop="12dp"
+            android:textColor="@android:color/black"
+            android:visibility="gone" />
+
+    </LinearLayout>
+</ScrollView>
