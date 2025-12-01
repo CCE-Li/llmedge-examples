@@ -65,7 +65,9 @@ class VideoGenerationActivity : AppCompatActivity() {
     private val cfgInput: EditText by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoCfgInput) }
     private val seedInput: EditText by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoSeedInput) }
     private val flowShiftInput: EditText by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoFlowShiftInput) }
-    private val loraInput: EditText by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoLoraInput) }
+    private val selectLoraButton: Button by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.btnSelectLora) }
+    private val loraLabel: TextView by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.loraLabel) }
+    private val clearLoraButton: Button by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.btnClearLora) }
     private val generateButton: Button by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.btnGenerateVideo) }
     private val cancelButton: Button by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.btnCancelVideo) }
     private val selectImageButton: Button by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.btnSelectImage) }
@@ -84,6 +86,7 @@ class VideoGenerationActivity : AppCompatActivity() {
     private var animationJob: Job? = null
     private var initImageBitmap: Bitmap? = null
     private var generatedFrames: List<Bitmap> = emptyList()
+    private var selectedLoraPath: String? = null
 
     // Image picker result handler
     private val imagePickerLauncher = registerForActivityResult(
@@ -92,6 +95,17 @@ class VideoGenerationActivity : AppCompatActivity() {
         if (result.resultCode == Activity.RESULT_OK) {
             result.data?.data?.let { uri ->
                 loadInitImage(uri)
+            }
+        }
+    }
+
+    // LoRA file picker result handler
+    private val loraPickerLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            result.data?.data?.let { uri ->
+                loadLoraFile(uri)
             }
         }
     }
@@ -115,6 +129,8 @@ class VideoGenerationActivity : AppCompatActivity() {
         selectImageButton.setOnClickListener { selectInitImage() }
         clearImageButton.setOnClickListener { clearInitImage() }
         saveGifButton.setOnClickListener { saveAsGif() }
+        selectLoraButton.setOnClickListener { selectLoraFile() }
+        clearLoraButton.setOnClickListener { clearLoraFile() }
 
         // Strength slider listener
         i2vStrengthSeekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
@@ -229,6 +245,68 @@ class VideoGenerationActivity : AppCompatActivity() {
         clearImageButton.visibility = View.GONE
     }
 
+    private fun selectLoraFile() {
+        val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+            type = "*/*"
+            addCategory(Intent.CATEGORY_OPENABLE)
+            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/octet-stream", "*/*"))
+        }
+        loraPickerLauncher.launch(Intent.createChooser(intent, "Select LoRA (.safetensors)"))
+    }
+
+    private fun loadLoraFile(uri: Uri) {
+        try {
+            // Copy the file to the app's cache directory for native access
+            val fileName = getFileNameFromUri(uri) ?: "lora_${System.currentTimeMillis()}.safetensors"
+            if (!fileName.endsWith(".safetensors")) {
+                Toast.makeText(this, "Please select a .safetensors file", Toast.LENGTH_SHORT).show()
+                return
+            }
+            
+            val loraDir = java.io.File(cacheDir, "loras")
+            loraDir.mkdirs()
+            val loraFile = java.io.File(loraDir, fileName)
+            
+            contentResolver.openInputStream(uri)?.use { inputStream ->
+                loraFile.outputStream().use { outputStream ->
+                    inputStream.copyTo(outputStream)
+                }
+            }
+            
+            selectedLoraPath = loraDir.absolutePath
+            loraLabel.text = fileName
+            clearLoraButton.visibility = View.VISIBLE
+            android.util.Log.i(TAG, "LoRA loaded: $selectedLoraPath/$fileName")
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Failed to load LoRA file", e)
+            Toast.makeText(this, "Failed to load LoRA: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun getFileNameFromUri(uri: Uri): String? {
+        var result: String? = null
+        if (uri.scheme == "content") {
+            contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (nameIndex >= 0) {
+                        result = cursor.getString(nameIndex)
+                    }
+                }
+            }
+        }
+        if (result == null) {
+            result = uri.path?.substringAfterLast('/')
+        }
+        return result
+    }
+
+    private fun clearLoraFile() {
+        selectedLoraPath = null
+        loraLabel.text = "No LoRA selected"
+        clearLoraButton.visibility = View.GONE
+    }
+
     private fun startGeneration() {
         if (generationJob?.isActive == true) {
             Toast.makeText(this, R.string.video_status_generation_running, Toast.LENGTH_SHORT).show()
@@ -247,8 +325,8 @@ class VideoGenerationActivity : AppCompatActivity() {
         val seed = parseSeedField() ?: return
         val flowShift = parseFlowShiftField() ?: return
 
-        // Get LoRA path if specified
-        val loraHfId = loraInput.text.toString().trim().ifBlank { null }
+        // Get LoRA path from file selector
+        val loraDir = selectedLoraPath
 
         // Get I2V strength
         val i2vStrength = i2vStrengthSeekBar.progress / 100.0f
@@ -257,7 +335,7 @@ class VideoGenerationActivity : AppCompatActivity() {
         val isLowMem = isLowMemoryDevice()
         val availMemMB = getAvailableMemoryMB()
         
-        android.util.Log.i(TAG, "Starting generation: isLowMem=$isLowMem, availMem=${availMemMB}MB, lora=$loraHfId, i2v=${initImageBitmap != null}")
+        android.util.Log.i(TAG, "Starting generation: isLowMem=$isLowMem, availMem=${availMemMB}MB, lora=$loraDir, i2v=${initImageBitmap != null}")
         
         if (availMemMB < 1500) {
             Toast.makeText(
@@ -304,40 +382,6 @@ class VideoGenerationActivity : AppCompatActivity() {
                     initWidth = scaledBmp.width
                     initHeight = scaledBmp.height
                     if (scaledBmp !== bmp) scaledBmp.recycle()
-                }
-
-                // Prepare LoRA directory if HF ID is specified
-                var loraDir: String? = null
-                if (!loraHfId.isNullOrBlank()) {
-                    withContext(Dispatchers.Main) {
-                        updateProgressUI(0, "Downloading LoRA...")
-                    }
-                    try {
-                        // Download LoRA from HuggingFace
-                        val loraResult = io.aatricks.llmedge.huggingface.HuggingFaceHub.ensureRepoFileOnDisk(
-                            context = applicationContext,
-                            modelId = loraHfId,
-                            revision = "main",
-                            filename = null, // Get first .safetensors file
-                            allowedExtensions = listOf(".safetensors"),
-                            token = null,
-                            forceDownload = false,
-                            preferSystemDownloader = true,
-                            onProgress = { downloaded, total ->
-                                val percent = if (total != null && total > 0) ((downloaded ?: 0) * 100 / total).toInt() else 0
-                                runOnUiThread {
-                                    progressLabel.text = "Downloading LoRA: $percent%"
-                                }
-                            }
-                        )
-                        loraDir = loraResult.file.parentFile?.absolutePath
-                        android.util.Log.i(TAG, "LoRA downloaded to: $loraDir")
-                    } catch (e: Exception) {
-                        android.util.Log.w(TAG, "Failed to download LoRA: ${e.message}")
-                        withContext(Dispatchers.Main) {
-                            Toast.makeText(applicationContext, "LoRA download failed: ${e.message}", Toast.LENGTH_LONG).show()
-                        }
-                    }
                 }
 
                 // Use sequential loading on low-memory devices (auto-detected)

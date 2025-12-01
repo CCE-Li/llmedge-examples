@@ -156,14 +156,37 @@
             android:layout_marginTop="16dp"
             android:textColor="@android:color/black" />
 
-        <EditText
-            android:id="@+id/videoLoraInput"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="LoRA HF ID (e.g., AlekseyCalvin/UkraineWar1.3B_Wan2.1_t2v-LoRA)"
-            android:background="@android:drawable/edit_text"
-            android:padding="12dp"
-            android:layout_marginTop="4dp" />
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginTop="4dp">
+
+            <Button
+                android:id="@+id/btnSelectLora"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Select LoRA" />
+
+            <TextView
+                android:id="@+id/loraLabel"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:text="No LoRA selected"
+                android:textColor="@android:color/darker_gray"
+                android:ellipsize="middle"
+                android:singleLine="true" />
+
+            <Button
+                android:id="@+id/btnClearLora"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Clear"
+                android:visibility="gone" />
+        </LinearLayout>
 
         <!-- Image-to-Video (I2V) Configuration -->
         <TextView
