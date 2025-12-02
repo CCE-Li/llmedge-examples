@@ -9,17 +9,20 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
 import android.view.View
+import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.ProgressBar
 import android.widget.SeekBar
+import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import io.aatricks.llmedge.LLMEdgeManager
+import io.aatricks.llmedge.StableDiffusion
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -65,6 +68,8 @@ class VideoGenerationActivity : AppCompatActivity() {
     private val cfgInput: EditText by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoCfgInput) }
     private val seedInput: EditText by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoSeedInput) }
     private val flowShiftInput: EditText by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoFlowShiftInput) }
+    private val samplerSpinner: Spinner by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.samplerSpinner) }
+    private val schedulerSpinner: Spinner by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.schedulerSpinner) }
     private val selectLoraButton: Button by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.btnSelectLora) }
     private val loraLabel: TextView by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.loraLabel) }
     private val clearLoraButton: Button by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.btnClearLora) }
@@ -125,6 +130,14 @@ class VideoGenerationActivity : AppCompatActivity() {
         progressBar.max = 100
         progressBar.progress = 0
         progressBar.visibility = View.GONE
+
+        // Initialize sampler spinner with user-friendly names
+        val samplerNames = StableDiffusion.SampleMethod.values().map { it.name.replace("_", " ") }
+        samplerSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, samplerNames)
+        
+        // Initialize scheduler spinner with user-friendly names
+        val schedulerNames = StableDiffusion.Scheduler.values().map { it.name.replace("_", " ") }
+        schedulerSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, schedulerNames)
 
         generateButton.setOnClickListener { startGeneration() }
         cancelButton.setOnClickListener { cancelGeneration() }
@@ -363,11 +376,18 @@ class VideoGenerationActivity : AppCompatActivity() {
         val seed = parseSeedField() ?: return
         val flowShift = parseFlowShiftField() ?: return
 
+        // Get sampler and scheduler from spinners
+        val selectedSampleMethod = StableDiffusion.SampleMethod.values()[samplerSpinner.selectedItemPosition]
+        val selectedScheduler = StableDiffusion.Scheduler.values()[schedulerSpinner.selectedItemPosition]
+
         // Get LoRA path from file selector
         val loraDir = selectedLoraPath
 
         // Get I2V strength
         val i2vStrength = i2vStrengthSeekBar.progress / 100.0f
+
+        // Calculate actual frames that will be generated (Wan formula)
+        val actualFrames = (framesCount - 1) / 4 * 4 + 1
 
         // Check if we have enough memory
         val isLowMem = isLowMemoryDevice()
@@ -375,8 +395,9 @@ class VideoGenerationActivity : AppCompatActivity() {
         
         FileLogger.separator("Video Generation Starting")
         FileLogger.i(TAG, "Parameters:")
-        FileLogger.i(TAG, "  Size: ${width}x${height}, Frames: $framesCount, Steps: $steps")
+        FileLogger.i(TAG, "  Size: ${width}x${height}, Frames: $framesCount (actual: $actualFrames), Steps: $steps")
         FileLogger.i(TAG, "  CFG: $cfg, Seed: $seed, FlowShift: $flowShift")
+        FileLogger.i(TAG, "  Sampler: $selectedSampleMethod, Scheduler: $selectedScheduler")
         FileLogger.i(TAG, "  LoRA: ${loraDir ?: "none"}")
         FileLogger.i(TAG, "  I2V: ${initImageBitmap != null}, Strength: $i2vStrength")
         FileLogger.i(TAG, "  Memory: isLowMem=$isLowMem, available=${availMemMB}MB")
@@ -441,11 +462,14 @@ class VideoGenerationActivity : AppCompatActivity() {
                     flowShift = flowShift,
                     flashAttn = true,
                     forceSequentialLoad = true,  // Always use sequential for safety
+                    // Sampling configuration
+                    sampleMethod = selectedSampleMethod,
+                    scheduler = selectedScheduler,
                     // LoRA configuration
                     loraModelDir = loraDir ?: getExternalFilesDir("loras")?.absolutePath,
-                    loraApplyMode = io.aatricks.llmedge.StableDiffusion.LoraApplyMode.AUTO,
+                    loraApplyMode = StableDiffusion.LoraApplyMode.AUTO,
                     // Easy cache for performance
-                    easyCache = io.aatricks.llmedge.StableDiffusion.EasyCacheParams(enabled = true, reuseThreshold = 0.2f, startPercent = 0.15f, endPercent = 0.95f)
+                    easyCache = StableDiffusion.EasyCacheParams(enabled = true, reuseThreshold = 0.2f, startPercent = 0.15f, endPercent = 0.95f)
                 )
 
                 // Note: I2V (Image-to-Video) is now supported!
@@ -475,6 +499,9 @@ class VideoGenerationActivity : AppCompatActivity() {
                         initWidth = initWidth,
                         initHeight = initHeight,
                         strength = if (hasInitImage) i2vStrength else 1.0f,
+                        // Sampling configuration
+                        sampleMethod = params.sampleMethod,
+                        scheduler = params.scheduler,
                         // LoRA and EasyCache
                         easyCache = params.easyCache,
                         loraModelDir = params.loraModelDir,
