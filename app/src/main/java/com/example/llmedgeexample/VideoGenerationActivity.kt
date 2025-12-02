@@ -73,6 +73,8 @@ class VideoGenerationActivity : AppCompatActivity() {
     private val selectImageButton: Button by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.btnSelectImage) }
     private val clearImageButton: Button by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.btnClearImage) }
     private val saveGifButton: Button by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.btnSaveGif) }
+    private val shareLogsButton: Button by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.btnShareLogs) }
+    private val logPathLabel: TextView by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.logPathLabel) }
     private val progressBar: ProgressBar by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoProgressBar) }
     private val progressLabel: TextView by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoProgressLabel) }
     private val previewImage: ImageView by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoPreview) }
@@ -131,6 +133,12 @@ class VideoGenerationActivity : AppCompatActivity() {
         saveGifButton.setOnClickListener { saveAsGif() }
         selectLoraButton.setOnClickListener { selectLoraFile() }
         clearLoraButton.setOnClickListener { clearLoraFile() }
+        shareLogsButton.setOnClickListener { shareLogs() }
+
+        // Show log file path
+        FileLogger.getCurrentLogFile()?.let { path ->
+            logPathLabel.text = path.substringAfterLast("/Android/")
+        }
 
         // Strength slider listener
         i2vStrengthSeekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
@@ -144,6 +152,36 @@ class VideoGenerationActivity : AppCompatActivity() {
 
         // Log initial memory state
         logMemoryState("Activity created")
+    }
+
+    private fun shareLogs() {
+        FileLogger.flush() // Ensure all pending logs are written
+        
+        val logFile = FileLogger.getCurrentLogFile()?.let { java.io.File(it) }
+        if (logFile == null || !logFile.exists()) {
+            Toast.makeText(this, "No log file found", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        try {
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                this,
+                "$packageName.fileprovider",
+                logFile
+            )
+            
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_SUBJECT, "LLMEdge Logs")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(Intent.createChooser(intent, "Share Logs"))
+        } catch (e: Exception) {
+            FileLogger.e(TAG, "Failed to share logs", e)
+            // Fallback: show the path
+            Toast.makeText(this, "Log file: ${logFile.absolutePath}", Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun saveAsGif() {
@@ -197,9 +235,9 @@ class VideoGenerationActivity : AppCompatActivity() {
                     ).show()
                 }
                 
-                android.util.Log.i(TAG, "Frames saved to: ${outputDir.absolutePath}")
+                FileLogger.i(TAG, "Frames saved to: ${outputDir.absolutePath}")
             } catch (e: Exception) {
-                android.util.Log.e(TAG, "Failed to save frames", e)
+                FileLogger.e(TAG, "Failed to save frames", e)
                 withContext(Dispatchers.Main) {
                     progressBar.visibility = View.GONE
                     Toast.makeText(applicationContext, "Failed to save: ${e.message}", Toast.LENGTH_LONG).show()
@@ -231,7 +269,7 @@ class VideoGenerationActivity : AppCompatActivity() {
                 }
             }
         } catch (e: Exception) {
-            android.util.Log.e(TAG, "Failed to load image", e)
+            FileLogger.e(TAG, "Failed to load image", e)
             Toast.makeText(this, "Failed to load image: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
@@ -276,9 +314,9 @@ class VideoGenerationActivity : AppCompatActivity() {
             selectedLoraPath = loraDir.absolutePath
             loraLabel.text = fileName
             clearLoraButton.visibility = View.VISIBLE
-            android.util.Log.i(TAG, "LoRA loaded: $selectedLoraPath/$fileName")
+            FileLogger.i(TAG, "LoRA loaded: $selectedLoraPath/$fileName")
         } catch (e: Exception) {
-            android.util.Log.e(TAG, "Failed to load LoRA file", e)
+            FileLogger.e(TAG, "Failed to load LoRA file", e)
             Toast.makeText(this, "Failed to load LoRA: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
@@ -335,7 +373,13 @@ class VideoGenerationActivity : AppCompatActivity() {
         val isLowMem = isLowMemoryDevice()
         val availMemMB = getAvailableMemoryMB()
         
-        android.util.Log.i(TAG, "Starting generation: isLowMem=$isLowMem, availMem=${availMemMB}MB, lora=$loraDir, i2v=${initImageBitmap != null}")
+        FileLogger.separator("Video Generation Starting")
+        FileLogger.i(TAG, "Parameters:")
+        FileLogger.i(TAG, "  Size: ${width}x${height}, Frames: $framesCount, Steps: $steps")
+        FileLogger.i(TAG, "  CFG: $cfg, Seed: $seed, FlowShift: $flowShift")
+        FileLogger.i(TAG, "  LoRA: ${loraDir ?: "none"}")
+        FileLogger.i(TAG, "  I2V: ${initImageBitmap != null}, Strength: $i2vStrength")
+        FileLogger.i(TAG, "  Memory: isLowMem=$isLowMem, available=${availMemMB}MB")
         
         if (availMemMB < 1500) {
             Toast.makeText(
@@ -407,7 +451,7 @@ class VideoGenerationActivity : AppCompatActivity() {
                 // Note: I2V (Image-to-Video) is now supported!
                 val hasInitImage = initImageBytes != null && initWidth > 0 && initHeight > 0
                 if (hasInitImage) {
-                    android.util.Log.i(TAG, "I2V mode: using init image ${initWidth}x${initHeight} with strength $i2vStrength")
+                    FileLogger.i(TAG, "I2V mode: using init image ${initWidth}x${initHeight} with strength $i2vStrength")
                 }
 
                 updateProgressUI(0, "Preparing model...")
@@ -477,14 +521,14 @@ class VideoGenerationActivity : AppCompatActivity() {
             } catch (cancelled: CancellationException) {
                 updateProgressUI(0, getString(R.string.video_status_cancelled))
             } catch (oom: OutOfMemoryError) {
-                android.util.Log.e(TAG, "Out of memory during generation", oom)
+                FileLogger.e(TAG, "Out of memory during generation", oom)
                 logMemoryState("OOM error")
                 updateProgressUI(
                     0,
                     getString(R.string.video_status_failed, "Out of memory. Close other apps and try again.")
                 )
             } catch (t: Throwable) {
-                android.util.Log.e(TAG, "Failed during generation", t)
+                FileLogger.e(TAG, "Failed during generation", t)
                 updateProgressUI(0, getString(R.string.video_status_failed, t.localizedMessage ?: "error"))
             } finally {
                 withContext(Dispatchers.Main) {
@@ -608,7 +652,7 @@ class VideoGenerationActivity : AppCompatActivity() {
         when (level) {
             android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW,
             android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL -> {
-                android.util.Log.w(TAG, "System memory low (level=$level), cancelling if active")
+                FileLogger.w(TAG, "System memory low (level=$level), cancelling if active")
                 if (generationJob?.isActive == true) {
                     cancelGeneration()
                     runOnUiThread {
@@ -656,13 +700,13 @@ class VideoGenerationActivity : AppCompatActivity() {
         val systemAvail = memoryInfo.availMem / BYTES_IN_MB
         val systemTotal = memoryInfo.totalMem / BYTES_IN_MB
 
-        android.util.Log.i(TAG, "=== Memory: $phase ===")
-        android.util.Log.i(TAG, "  Heap: ${heapUsed}MB / ${heapMax}MB max")
-        android.util.Log.i(TAG, "  System: ${systemAvail}MB / ${systemTotal}MB total")
+        FileLogger.i(TAG, "=== Memory: $phase ===")
+        FileLogger.i(TAG, "  Heap: ${heapUsed}MB / ${heapMax}MB max")
+        FileLogger.i(TAG, "  System: ${systemAvail}MB / ${systemTotal}MB total")
 
         // Log Vulkan memory if available
         LLMEdgeManager.getVulkanDeviceInfo()?.let { vulkan ->
-            android.util.Log.i(TAG, "  Vulkan: ${vulkan.freeMemoryMB}MB / ${vulkan.totalMemoryMB}MB")
+            FileLogger.i(TAG, "  Vulkan: ${vulkan.freeMemoryMB}MB / ${vulkan.totalMemoryMB}MB")
         }
     }
 }

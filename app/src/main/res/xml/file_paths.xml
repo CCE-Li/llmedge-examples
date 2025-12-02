@@ -2,4 +2,6 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
 	<!-- Allow access to files created in the app's external cache directory -->
 	<external-cache-path name="external_cache" path="." />
+	<!-- Allow access to log files in external files directory -->
+	<external-files-path name="external_files" path="." />
 </paths>
