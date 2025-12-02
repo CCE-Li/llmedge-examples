@@ -131,8 +131,14 @@ class VideoGenerationActivity : AppCompatActivity() {
         progressBar.progress = 0
         progressBar.visibility = View.GONE
 
-        // Initialize sampler spinner with user-friendly names
-        val samplerNames = StableDiffusion.SampleMethod.values().map { it.name.replace("_", " ") }
+        // Initialize sampler spinner - show recommended samplers for Wan first
+        val recommendedSamplers = StableDiffusion.SampleMethod.WAN_RECOMMENDED
+        val otherSamplers = StableDiffusion.SampleMethod.values().filter { it !in recommendedSamplers }
+        val orderedSamplers = recommendedSamplers + otherSamplers
+        val samplerNames = orderedSamplers.map { 
+            val name = it.name.replace("_", " ")
+            if (it in recommendedSamplers) "$name ★" else name
+        }
         samplerSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, samplerNames)
         
         // Initialize scheduler spinner with user-friendly names
@@ -376,8 +382,11 @@ class VideoGenerationActivity : AppCompatActivity() {
         val seed = parseSeedField() ?: return
         val flowShift = parseFlowShiftField() ?: return
 
-        // Get sampler and scheduler from spinners
-        val selectedSampleMethod = StableDiffusion.SampleMethod.values()[samplerSpinner.selectedItemPosition]
+        // Get sampler and scheduler from spinners (using the same ordered list as initialization)
+        val recommendedSamplers = StableDiffusion.SampleMethod.WAN_RECOMMENDED
+        val otherSamplers = StableDiffusion.SampleMethod.values().filter { it !in recommendedSamplers }
+        val orderedSamplers = recommendedSamplers + otherSamplers
+        val selectedSampleMethod = orderedSamplers[samplerSpinner.selectedItemPosition]
         val selectedScheduler = StableDiffusion.Scheduler.values()[schedulerSpinner.selectedItemPosition]
 
         // Get LoRA path from file selector
