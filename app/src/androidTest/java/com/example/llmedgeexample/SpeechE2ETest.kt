@@ -41,17 +41,14 @@ class SpeechE2ETest {
         private const val WHISPER_MODEL_ID = "ggerganov/whisper.cpp"
         private const val WHISPER_MODEL_FILE = "ggml-tiny.bin"
 
-        // Bark model - Note: No public HuggingFace repo exists with the correct format
-        // bark.cpp requires a single ggml_weights.bin file converted from Bark checkpoints
-        // Available repos have split files (vocab, coarse, fine, text, codec)
-        private const val BARK_MODEL_ID = "ct-49/bark.cpp-quantized-8.26.23"
-        private const val BARK_MODEL_FILE = "ggml_weights_quantized/ggml_weights_text.bin"
+        // Bark model - Green-Sky/bark-ggml has proper ggml format files
+        // bark-small_weights-f16.bin (843 MB) - smaller model for testing
+        // Note: f16 inference is slow on mobile (~10+ minutes), consider quantized models
+        private const val BARK_MODEL_ID = "Green-Sky/bark-ggml"
+        private const val BARK_MODEL_FILE = "bark-small_weights-f16.bin"
 
         // Test phrase - keep it simple for reliable transcription
         private const val TEST_PHRASE = "Hello world"
-
-        // Flag to skip Bark tests until proper model is available
-        private const val SKIP_BARK_TESTS = true
     }
 
     @Before
@@ -127,23 +124,14 @@ class SpeechE2ETest {
     /**
      * Test that Bark model can be downloaded and loaded
      *
-     * NOTE: Currently skipped because there's no public HuggingFace repo with the correct format.
-     * bark.cpp requires a single ggml_weights.bin file converted from Bark checkpoints, but
-     * available repos have split files (vocab, coarse, fine, text, codec).
+     * Uses Green-Sky/bark-ggml which has properly formatted combined ggml models. Note: The model
+     * is 843MB f16, which loads but inference is slow on mobile.
      */
     @Test
     fun testBarkModelDownloadAndLoad() = runBlocking {
         log("========================================")
         log("TEST: Bark Model Download and Load")
         log("========================================")
-
-        if (SKIP_BARK_TESTS) {
-            log("SKIPPED: Bark tests are disabled")
-            log("Reason: No public HuggingFace repo exists with correctly formatted bark.cpp model")
-            log("bark.cpp requires a single ggml_weights.bin file, not split files")
-            log("========================================")
-            return@runBlocking
-        }
 
         try {
             // Step 1: Download model
@@ -275,7 +263,8 @@ class SpeechE2ETest {
     /**
      * Full E2E test: Generate speech with Bark, then transcribe with Whisper
      *
-     * NOTE: Currently skipped because Bark model is not available from HuggingFace.
+     * NOTE: Skipped by default on Android because Bark f16 inference is too slow (several minutes
+     * vs 5 seconds on desktop). A quantized model would be needed for practical mobile use.
      */
     @Test
     fun testFullSpeechPipeline() = runBlocking {
@@ -284,13 +273,13 @@ class SpeechE2ETest {
         log("========================================")
         log("Test phrase: '$TEST_PHRASE'")
 
-        if (SKIP_BARK_TESTS) {
-            log("SKIPPED: Bark tests are disabled")
-            log("Reason: No public HuggingFace repo exists with correctly formatted bark.cpp model")
-            log("The full speech pipeline test requires Bark for speech synthesis")
-            log("========================================")
-            return@runBlocking
-        }
+        // Skip full pipeline on Android - f16 inference takes 10+ minutes
+        log("SKIPPED: Full speech pipeline test disabled on Android")
+        log("Reason: Bark f16 model inference is too slow for mobile (10+ minutes)")
+        log("The testBarkModelDownloadAndLoad test verifies model loading works")
+        log("For full E2E testing, use Linux desktop tests with quantized models")
+        log("========================================")
+        return@runBlocking
 
         try {
             // Phase 1: Download and load Bark

@@ -68,18 +68,35 @@ This example application provides production-ready demonstrations of llmedge's c
 - Performance benchmarking utilities
 - Command-line invocation support
 
+### Speech Processing
+
+**Speech E2E Test** (`SpeechE2ETest.kt`)
+- Whisper STT model download and transcription
+- Bark TTS model download and loading
+- End-to-end speech synthesis pipeline testing
+- Audio sample generation and transcription verification
+
+**Status:**
+- ✅ **Whisper STT**: Fully functional on Android with tiny/base models
+- ⚠️ **Bark TTS**: Model loads successfully, but f16 inference is too slow for real-time use on mobile (10+ minutes vs 5 seconds on desktop)
+
 ## System Requirements
 
 ### Minimum Requirements
 - Android SDK 21+ (Lollipop)
 - 3GB RAM for basic LLM inference
 - 500MB free storage for model caching
+- 1GB+ free storage for speech models
 
 ### Recommended Configuration
 - Android 11+ (API 30) for Vulkan acceleration
 - 8GB RAM for Stable Diffusion
 - 12GB+ RAM for video generation (Wan models)
 - 5GB free storage for video model pipeline
+
+### Speech Model Requirements
+- **Whisper STT**: 75MB-500MB depending on model size (tiny to small)
+- **Bark TTS**: 843MB+ for f16 models (quantized not yet available)
 
 ### Development Environment
 - Android SDK with NDK r27+
@@ -121,7 +138,7 @@ For GPU-accelerated inference on Android 11+ devices:
 ```bash
 ./gradlew :llmedge:assembleRelease \
   -Pandroid.jniCmakeArgs="-DGGML_VULKAN=ON -DSD_VULKAN=ON"
-  
+
 cp llmedge/build/outputs/aar/llmedge-release.aar llmedge-examples/app/libs/llmedge-release.aar
 
 cd llmedge-examples
@@ -183,12 +200,12 @@ CoroutineScope(Dispatchers.IO).launch {
         modelId = "unsloth/Qwen3-0.6B-GGUF",
         filename = "Qwen3-0.6B-Q4_K_M.gguf"
     )
-    
+
     val response = smol.getResponse("Explain quantum computing concisely.")
     withContext(Dispatchers.Main) {
         textView.text = response
     }
-    
+
     smol.close()
 }
 ```
@@ -203,10 +220,118 @@ CoroutineScope(Dispatchers.IO).launch {
     rag.init()
     val chunks = rag.indexPdf(pdfUri)
     val answer = rag.ask("What are the main conclusions?")
-    
+
     withContext(Dispatchers.Main) {
         resultView.text = answer
     }
+}
+```
+
+### Speech-to-Text (Whisper)
+
+```kotlin
+import io.aatricks.llmedge.LLMEdgeManager
+
+CoroutineScope(Dispatchers.IO).launch {
+    // Simple transcription
+    val text = LLMEdgeManager.transcribeAudioToText(
+        context = context,
+        audioSamples = audioSamples  // 16kHz mono PCM float32
+    )
+
+    // Full transcription with timing
+    val segments = LLMEdgeManager.transcribeAudio(
+        context = context,
+        params = LLMEdgeManager.TranscriptionParams(
+            audioSamples = audioSamples,
+            language = "en"
+        )
+    ) { progress ->
+        Log.d("Whisper", "Progress: $progress%")
+    }
+
+    withContext(Dispatchers.Main) {
+        segments.forEach { segment ->
+            textView.append("[${segment.startTimeMs}ms] ${segment.text}\n")
+        }
+    }
+}
+```
+
+### Real-time Streaming Transcription
+
+For live captioning from a microphone:
+
+```kotlin
+import io.aatricks.llmedge.LLMEdgeManager
+
+class LiveCaptionActivity : AppCompatActivity() {
+    private var transcriber: Whisper.StreamingTranscriber? = null
+
+    fun startLiveCaptions() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            // Create streaming transcriber with sliding window
+            transcriber = LLMEdgeManager.createStreamingTranscriber(
+                context = this@LiveCaptionActivity,
+                params = LLMEdgeManager.StreamingTranscriptionParams(
+                    stepMs = 3000,      // Process every 3 seconds
+                    lengthMs = 10000,   // 10-second windows
+                    language = "en",
+                    useVad = true       // Skip silent audio
+                )
+            )
+
+            // Collect transcription results
+            transcriber?.start()?.collect { segment ->
+                withContext(Dispatchers.Main) {
+                    captionTextView.text = segment.text
+                }
+            }
+        }
+    }
+
+    // Feed audio from microphone (called by AudioRecord callback)
+    fun onAudioData(samples: FloatArray) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            transcriber?.feedAudio(samples)
+        }
+    }
+
+    fun stopLiveCaptions() {
+        transcriber?.stop()
+        LLMEdgeManager.stopStreamingTranscription()
+    }
+}
+```
+
+### Text-to-Speech (Bark)
+
+> **Note:** Bark TTS with f16 models is very slow on mobile (~10+ minutes). Best suited for desktop/server use.
+
+```kotlin
+import io.aatricks.llmedge.LLMEdgeManager
+
+CoroutineScope(Dispatchers.IO).launch {
+    // Generate speech
+    val audio = LLMEdgeManager.synthesizeSpeech(
+        context = context,
+        params = LLMEdgeManager.SpeechSynthesisParams(
+            text = "Hello, world!"
+        )
+    ) { step, progress ->
+        Log.d("Bark", "${step.name}: $progress%")
+    }
+
+    // Or save directly to file
+    val outputFile = File(context.cacheDir, "output.wav")
+    LLMEdgeManager.synthesizeSpeechToFile(
+        context = context,
+        text = "Hello, world!",
+        outputFile = outputFile
+    )
+
+    // Unload when done
+    LLMEdgeManager.unloadSpeechModels()
 }
 ```
 
@@ -385,7 +510,40 @@ adb logcat -s SmolLM:* SmolSD:* | grep -i vulkan
 - Inspect logcat for native stack traces
 - Clean build: `./gradlew clean`
 
+### Speech Processing Issues
+
+**Symptoms**: Bark TTS taking 10+ minutes to generate audio
+
+**Explanation**: This is expected behavior with f16 models on mobile. Bark.cpp uses full-precision weights which are computationally intensive on ARM CPUs.
+
+**Workarounds**:
+- Use Bark for desktop/server batch processing only
+- Wait for quantized models in combined ggml format (not yet available)
+- For real-time TTS on mobile, consider alternative solutions
+
+**Symptoms**: Whisper transcription crashing or producing garbled output
+
+**Solutions**:
+- Ensure audio is 16kHz mono PCM float32 format
+- Use smaller models (tiny/base) for faster processing
+- Check that model file downloaded completely
+
 ## Testing Infrastructure
+
+### Speech E2E Testing
+
+Run speech tests via adb:
+```bash
+adb shell am instrument -w -e class com.example.llmedgeexample.SpeechE2ETest \
+  com.example.llmedgeexample.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+**Test coverage:**
+- `testWhisperModelDownloadAndLoad` - Downloads and loads Whisper model ✅
+- `testWhisperTranscription` - Transcribes audio samples ✅
+- `testWhisperSystemInfo` - Validates model info ✅
+- `testBarkModelDownloadAndLoad` - Downloads and loads Bark model ✅
+- `testFullSpeechPipeline` - Skipped on mobile (too slow with f16)
 
 ### Headless E2E Testing
 
