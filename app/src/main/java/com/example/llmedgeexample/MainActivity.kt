@@ -11,7 +11,7 @@ import io.aatricks.llmedge.LLMEdgeManager
 
 /**
  * Main activity for LLMEdge Example app.
- * 
+ *
  * Provides navigation to various demo activities:
  * - Local asset model loading
  * - HuggingFace model download
@@ -58,6 +58,14 @@ class MainActivity : AppCompatActivity() {
 
         findViewById<Button>(R.id.btnOpenImageGeneration).setOnClickListener {
             startActivity(Intent(this, ImageGenerationActivity::class.java))
+        }
+
+        findViewById<Button>(R.id.btnOpenTranscription).setOnClickListener {
+            startActivity(Intent(this, TranscriptionActivity::class.java))
+        }
+
+        findViewById<Button>(R.id.btnOpenTTS).setOnClickListener {
+            startActivity(Intent(this, TTSActivity::class.java))
         }
 
         // Display memory and device info
