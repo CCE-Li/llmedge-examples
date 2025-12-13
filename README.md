@@ -51,6 +51,8 @@ This example application provides production-ready demonstrations of llmedge's c
 
 **Image Generation** (`StableDiffusionActivity.kt`)
 - Text-to-image synthesis using Stable Diffusion
+- LoRA Support: Toggle switch to apply Detail Tweaker LoRA, automatically downloaded from Hugging Face
+- EasyCache: Auto-enabled acceleration for supported models
 - Memory-aware configuration options
 - Progressive generation with cancellation support
 - Demonstrates VAE loading and tensor offloading strategies
@@ -189,28 +191,28 @@ Cache persists across app restarts and is reused automatically.
 ### Basic LLM Inference
 
 ```kotlin
-val smol = SmolLM()
-
+// Using the high-level Manager API
 CoroutineScope(Dispatchers.IO).launch {
-    smol.loadFromHuggingFace(
+    val response = LLMEdgeManager.generateText(
         context = context,
-        modelId = "unsloth/Qwen3-0.6B-GGUF",
-        filename = "Qwen3-0.6B-Q4_K_M.gguf"
+        params = LLMEdgeManager.TextGenerationParams(
+            prompt = "Explain quantum computing concisely.",
+            modelId = "unsloth/Qwen3-0.6B-GGUF",
+            modelFilename = "Qwen3-0.6B-Q4_K_M.gguf"
+        )
     )
-
-    val response = smol.getResponse("Explain quantum computing concisely.")
+    
     withContext(Dispatchers.Main) {
         textView.text = response
     }
-
-    smol.close()
 }
 ```
 
 ### RAG Pipeline
 
 ```kotlin
-val smol = SmolLM()
+// Access the underlying SmolLM instance from the manager for custom pipelines
+val smol = LLMEdgeManager.getSmolLM(context)
 val rag = RAGEngine(context, smol)
 
 CoroutineScope(Dispatchers.IO).launch {
@@ -335,79 +337,38 @@ CoroutineScope(Dispatchers.IO).launch {
 ### Image Generation
 
 ```kotlin
-val sd = StableDiffusion.load(
+val bitmap = LLMEdgeManager.generateImage(
     context = this,
-    modelId = "Meina/MeinaMix",
-    filename = "MeinaPastel-v6-baked-vae.safetensors",
-    offloadToCpu = true
-)
-
-val bitmap = sd.txt2img(
-    StableDiffusion.GenerateParams(
+    params = LLMEdgeManager.ImageGenerationParams(
         prompt = "serene mountain landscape, sunset",
         width = 512,
         height = 512,
-        steps = 20,
-        cfgScale = 7.0f
+        steps = 20
     )
 )
 
 imageView.setImageBitmap(bitmap)
-sd.close()
 ```
 
 ### Video Generation
 
 ```kotlin
-// Check device compatibility
-val activityManager = getSystemService(ACTIVITY_SERVICE) as ActivityManager
-val memInfo = ActivityManager.MemoryInfo()
-activityManager.getMemoryInfo(memInfo)
-val totalRamGB = memInfo.totalMem / (1024.0 * 1024.0 * 1024.0)
-
-if (totalRamGB < 12.0) {
-    showError("Video generation requires 12GB+ RAM")
-    return
-}
-
-// Download all three required components
-val modelFile = HuggingFaceHub.ensureRepoFileOnDisk(
-    context, "Comfy-Org/Wan_2.1_ComfyUI_repackaged", "main",
-    "wan2.1_t2v_1.3B_fp16.safetensors"
-)
-
-val vaeFile = HuggingFaceHub.ensureRepoFileOnDisk(
-    context, "Comfy-Org/Wan_2.1_ComfyUI_repackaged", "main",
-    "wan_2.1_vae.safetensors"
-)
-
-val t5xxlFile = HuggingFaceHub.ensureRepoFileOnDisk(
-    context, "city96/umt5-xxl-encoder-gguf", "main",
-    "umt5-xxl-encoder-Q3_K_S.gguf"
-)
-
-// Load with explicit paths
-val sd = StableDiffusion.load(
+// Automatic memory management and sequential loading
+val frames = LLMEdgeManager.generateVideo(
     context = this,
-    modelPath = modelFile.file.absolutePath,
-    vaePath = vaeFile.file.absolutePath,
-    t5xxlPath = t5xxlFile.file.absolutePath,
-    offloadToCpu = true,
-    keepClipOnCpu = true,
-    keepVaeOnCpu = true
-)
-
-val frames = sd.txt2vid(
-    StableDiffusion.VideoGenerateParams(
+    params = LLMEdgeManager.VideoGenerationParams(
         prompt = "cat walking through garden",
         videoFrames = 8,
-        width = 256,
-        height = 256,
-        steps = 20
+        width = 512,
+        height = 512,
+        steps = 20,
+        cfgScale = 7.0f,
+        flowShift = 3.0f,
+        forceSequentialLoad = true // Safe for most devices
     )
-)
-
-sd.close()
+) { status, current, total ->
+    Log.d("VideoGen", "$status")
+}
 ```
 
 ## Performance Optimization

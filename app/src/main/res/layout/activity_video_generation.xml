@@ -32,6 +32,295 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
+            android:layout_marginTop="12dp">
+
+            <EditText
+                android:id="@+id/videoWidthInput"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:hint="Width (x64, 256-960)"
+                android:inputType="number"
+                android:text="512"
+                android:background="@android:drawable/edit_text"
+                android:padding="12dp" />
+
+            <EditText
+                android:id="@+id/videoHeightInput"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:hint="Height (x64, 256-960)"
+                android:inputType="number"
+                android:text="512"
+                android:background="@android:drawable/edit_text"
+                android:padding="12dp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="8dp">
+
+            <EditText
+                android:id="@+id/videoFramesInput"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:hint="Frames 5,9,13,17..."
+                android:inputType="number"
+                android:text="9"
+                android:background="@android:drawable/edit_text"
+                android:padding="12dp" />
+
+            <EditText
+                android:id="@+id/videoFpsInput"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:hint="FPS (1-30)"
+                android:inputType="number"
+                android:text="8"
+                android:background="@android:drawable/edit_text"
+                android:padding="12dp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="8dp">
+
+            <EditText
+                android:id="@+id/videoStepsInput"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:hint="Steps (10-50)"
+                android:inputType="number"
+                android:text="20"
+                android:background="@android:drawable/edit_text"
+                android:padding="12dp" />
+
+            <EditText
+                android:id="@+id/videoCfgInput"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:hint="CFG (1.0-15.0)"
+                android:inputType="numberDecimal"
+                android:text="7.0"
+                android:background="@android:drawable/edit_text"
+                android:padding="12dp" />
+        </LinearLayout>
+
+        <!-- Sampler and Scheduler Selection -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="8dp">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Sampler:"
+                    android:textSize="12sp"
+                    android:textColor="@android:color/darker_gray" />
+
+                <Spinner
+                    android:id="@+id/samplerSpinner"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="@android:drawable/btn_dropdown" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Scheduler:"
+                    android:textSize="12sp"
+                    android:textColor="@android:color/darker_gray" />
+
+                <Spinner
+                    android:id="@+id/schedulerSpinner"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="@android:drawable/btn_dropdown" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="8dp">
+
+            <EditText
+                android:id="@+id/videoSeedInput"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:hint="Seed (-1=random)"
+                android:inputType="numberSigned"
+                android:text="-1"
+                android:background="@android:drawable/edit_text"
+                android:padding="12dp" />
+
+            <EditText
+                android:id="@+id/videoFlowShiftInput"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:hint="Flow shift (blank=auto)"
+                android:inputType="numberDecimal"
+                android:background="@android:drawable/edit_text"
+                android:padding="12dp" />
+        </LinearLayout>
+
+        <!-- LoRA Configuration -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="LoRA (Optional)"
+            android:textStyle="bold"
+            android:layout_marginTop="16dp"
+            android:textColor="@android:color/black" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginTop="4dp">
+
+            <Button
+                android:id="@+id/btnSelectLora"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Select LoRA" />
+
+            <TextView
+                android:id="@+id/loraLabel"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:text="No LoRA selected"
+                android:textColor="@android:color/darker_gray"
+                android:ellipsize="middle"
+                android:singleLine="true" />
+
+            <Button
+                android:id="@+id/btnClearLora"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Clear"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <!-- Image-to-Video (I2V) Configuration -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Image-to-Video (Optional)"
+            android:textStyle="bold"
+            android:layout_marginTop="16dp"
+            android:textColor="@android:color/black" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginTop="4dp">
+
+            <Button
+                android:id="@+id/btnSelectImage"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Select Image" />
+
+            <TextView
+                android:id="@+id/i2vImageLabel"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:text="No image selected"
+                android:textColor="@android:color/darker_gray" />
+
+            <Button
+                android:id="@+id/btnClearImage"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Clear"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginTop="8dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Strength:"
+                android:textColor="@android:color/black" />
+
+            <SeekBar
+                android:id="@+id/i2vStrengthSeekBar"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:max="100"
+                android:progress="80" />
+
+            <TextView
+                android:id="@+id/i2vStrengthLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="0.80"
+                android:textColor="@android:color/black" />
+        </LinearLayout>
+
+        <ImageView
+            android:id="@+id/i2vPreviewImage"
+            android:layout_width="100dp"
+            android:layout_height="100dp"
+            android:layout_marginTop="8dp"
+            android:background="@android:color/darker_gray"
+            android:scaleType="centerCrop"
+            android:visibility="gone"
+            android:contentDescription="Init image preview" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
             android:gravity="center_vertical"
             android:layout_marginTop="12dp">
 
@@ -49,6 +338,14 @@
                 android:layout_height="wrap_content"
                 android:layout_marginStart="8dp"
                 android:text="Cancel" />
+
+            <Button
+                android:id="@+id/btnSaveGif"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="Save GIF"
+                android:visibility="gone" />
         </LinearLayout>
 
         <ProgressBar
@@ -86,7 +383,35 @@
             android:layout_height="wrap_content"
             android:text="Metrics will appear here after generation"
             android:layout_marginTop="12dp"
-            android:textColor="@android:color/black" />
+            android:textColor="@android:color/black"
+            android:visibility="gone" />
+
+        <!-- Log file access -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginTop="16dp">
+
+            <Button
+                android:id="@+id/btnShareLogs"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Share Logs" />
+
+            <TextView
+                android:id="@+id/logPathLabel"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:text="Logs saved to app storage"
+                android:textColor="@android:color/darker_gray"
+                android:textSize="12sp"
+                android:ellipsize="middle"
+                android:singleLine="true" />
+        </LinearLayout>
 
     </LinearLayout>
 </ScrollView>

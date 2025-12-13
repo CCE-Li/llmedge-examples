@@ -10,6 +10,7 @@ import android.widget.ImageView
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
+import android.widget.Switch
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import io.aatricks.llmedge.LLMEdgeManager
@@ -32,21 +33,33 @@ class ImageGenerationActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "ImageGenerationActivity"
         private const val DEFAULT_PROMPT = "A futuristic city"
+        private const val DEFAULT_WIDTH = 512
+        private const val DEFAULT_HEIGHT = 512
+        private const val DEFAULT_STEPS = 20
+        private const val DEFAULT_CFG = 7.0f
+        private const val DEFAULT_SEED = -1L
         private const val BYTES_IN_MB = 1024L * 1024L
     }
 
     private val promptInput: EditText by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoPromptInput) }
+    private val widthInput: EditText by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.imageWidthInput) }
+    private val heightInput: EditText by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.imageHeightInput) }
+    private val stepsInput: EditText by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.imageStepsInput) }
+    private val cfgInput: EditText by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.imageCfgInput) }
+    private val seedInput: EditText by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.imageSeedInput) }
     private val generateButton: Button by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.btnGenerateVideo) }
     private val cancelButton: Button by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.btnCancelVideo) }
     private val progressBar: ProgressBar by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoProgressBar) }
     private val progressLabel: TextView by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoProgressLabel) }
     private val previewImage: ImageView by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoPreview) }
+    private val metricsLabel: TextView by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.videoMetricsLabel) }
+    private val loraToggle: Switch by lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.loraToggle) }
 
     private var generationJob: Job? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_video_generation) // Reusing layout for simplicity
+        setContentView(R.layout.activity_image_generation) // Use image-specific layout
 
         // Prefer performance mode during interactive examples to favor throughput (disable for memory-constrained devices)
         io.aatricks.llmedge.LLMEdgeManager.preferPerformanceMode = true
@@ -60,6 +73,15 @@ class ImageGenerationActivity : AppCompatActivity() {
         generateButton.setOnClickListener { startGeneration() }
         cancelButton.setOnClickListener { cancelGeneration() }
 
+        loraToggle.setOnCheckedChangeListener { _, isChecked ->
+            // Optionally, provide feedback to the user or log the state change
+            if (isChecked) {
+                Toast.makeText(this, "Detail Tweaker LoRA Enabled", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "Detail Tweaker LoRA Disabled", Toast.LENGTH_SHORT).show()
+            }
+        }
+
         // Log initial memory state
         logMemoryState("Activity created")
     }
@@ -69,6 +91,12 @@ class ImageGenerationActivity : AppCompatActivity() {
             Toast.makeText(this, "Generation already running", Toast.LENGTH_SHORT).show()
             return
         }
+
+        val width = parseDimensionField(widthInput, DEFAULT_WIDTH, "Width") ?: return
+        val height = parseDimensionField(heightInput, DEFAULT_HEIGHT, "Height") ?: return
+        val steps = parseStepsField() ?: return
+        val cfg = parseCfgField() ?: return
+        val seed = parseSeedField() ?: return
 
         // Check available memory
         val availMemMB = getAvailableMemoryMB()
@@ -91,25 +119,53 @@ class ImageGenerationActivity : AppCompatActivity() {
         // Dispatchers.Default is CPU-bound and has limited parallelism (core count)
         generationJob = lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val prompt = promptInput.text.toString().ifBlank { DEFAULT_PROMPT }
+                var prompt = promptInput.text.toString().ifBlank { DEFAULT_PROMPT }
+                var loraModelDir: String? = null
+                
+                if (loraToggle.isChecked) {
+                    updateProgressUI(0, "Checking LoRA model...")
+                    try {
+                        val result = io.aatricks.llmedge.huggingface.HuggingFaceHub.ensureRepoFileOnDisk(
+                            context = applicationContext,
+                            modelId = "imagepipeline/Detail-Tweaker-LoRA-SD1.5",
+                            filename = null, // Auto-detect largest safetensors
+                            preferSystemDownloader = true,
+                            onProgress = { downloaded, total ->
+                                val percent = if (total != null && total > 0) (downloaded * 100 / total).toInt() else 0
+                                updateProgressUI(0, "Downloading LoRA: $percent%")
+                            }
+                        )
+                        loraModelDir = result.file.parentFile.absolutePath
+                        val loraName = result.file.nameWithoutExtension
+                        prompt += " <lora:$loraName:1.0>"
+                    } catch (e: Exception) {
+                        android.util.Log.e(TAG, "Failed to download LoRA", e)
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(this@ImageGenerationActivity, "Failed to download LoRA: ${e.message}", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
                 
                 // Log memory before generation
                 logMemoryState("Before image generation")
 
                 updateProgressUI(0, "Preparing...")
 
-                
+                val useFlashAttn = width >= 512 && height >= 512
+
+                val loraApplyMode = io.aatricks.llmedge.StableDiffusion.LoraApplyMode.AUTO
+
                 val params = LLMEdgeManager.ImageGenerationParams(
                     prompt = prompt,
-                    width = 128,
-                    height = 128,
-                    steps = 15,
-                    cfgScale = 7.0f,
-                    // Disable flash attention explicitly for small images to avoid
-                    // inefficiencies on mobile GPUs; LLMEdgeManager will also auto-disable
-                    // based on dimensions, but we enforce it here to ensure the correct path.
-                    flashAttn = false,
-                    forceSequentialLoad = false
+                    width = width,
+                    height = height,
+                    steps = steps,
+                    cfgScale = cfg,
+                    seed = seed,
+                    flashAttn = useFlashAttn,
+                    forceSequentialLoad = false,
+                    loraModelDir = loraModelDir,
+                    loraApplyMode = loraApplyMode
                 )
 
                 val bitmap = LLMEdgeManager.generateImage(
@@ -133,11 +189,14 @@ class ImageGenerationActivity : AppCompatActivity() {
                 LLMEdgeManager.logPerformanceSnapshot()
 
                 // Show metrics
+                // Show metrics in the dedicated metrics label and progress status
                 val metrics = LLMEdgeManager.getLastDiffusionMetrics()
                 withContext(Dispatchers.Main) {
                     val metricsText = metrics?.let {
                         "Generated in ${String.format("%.1f", it.totalTimeSeconds)}s"
                     } ?: ""
+                    metricsLabel.text = metricsText.ifBlank { "No metrics available" }
+                    metricsLabel.visibility = View.VISIBLE
                     updateProgressUI(100, "Complete. $metricsText")
                 }
             } catch (cancelled: CancellationException) {
@@ -173,6 +232,54 @@ class ImageGenerationActivity : AppCompatActivity() {
                 progressBar.progress = percent
             }
             progressLabel.text = status
+        }
+    }
+
+    private fun parseDimensionField(field: EditText, defaultValue: Int, label: String): Int? {
+        val value = field.text.toString().ifBlank { defaultValue.toString() }.toIntOrNull()
+        return if (value == null || value !in 128..1024 || value % 8 != 0) {
+            field.error = "$label must be a multiple of 8 between 128 and 1024"
+            field.requestFocus()
+            null
+        } else {
+            field.error = null
+            value
+        }
+    }
+
+    private fun parseStepsField(): Int? {
+        val value = stepsInput.text.toString().ifBlank { DEFAULT_STEPS.toString() }.toIntOrNull()
+        return if (value == null || value !in 1..50) {
+            stepsInput.error = "Steps must be between 1 and 50"
+            stepsInput.requestFocus()
+            null
+        } else {
+            stepsInput.error = null
+            value
+        }
+    }
+
+    private fun parseCfgField(): Float? {
+        val value = cfgInput.text.toString().ifBlank { DEFAULT_CFG.toString() }.toFloatOrNull()
+        return if (value == null || value !in 1.0f..15.0f) {
+            cfgInput.error = "CFG must be between 1.0 and 15.0"
+            cfgInput.requestFocus()
+            null
+        } else {
+            cfgInput.error = null
+            value
+        }
+    }
+
+    private fun parseSeedField(): Long? {
+        val value = seedInput.text.toString().ifBlank { DEFAULT_SEED.toString() }.toLongOrNull()
+        return if (value == null || value < -1L) {
+            seedInput.error = "Seed must be -1 or non-negative"
+            seedInput.requestFocus()
+            null
+        } else {
+            seedInput.error = null
+            value
         }
     }
 

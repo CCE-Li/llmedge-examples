@@ -35,15 +35,20 @@ class LLMEdgeExampleApp : Application() {
         super.onCreate()
         instance = this
         
+        // Initialize file logger for users without logcat access
+        FileLogger.init(this)
+        FileLogger.separator("Application Starting")
+        FileLogger.i(TAG, "Log file: ${FileLogger.getCurrentLogFile()}")
+        
         logMemoryState("Application started")
         
         // Log Vulkan availability for debugging
         val vulkanInfo = LLMEdgeManager.getVulkanDeviceInfo()
         if (vulkanInfo != null) {
-            Log.i(TAG, "Vulkan available: ${vulkanInfo.deviceCount} device(s), " +
+            FileLogger.i(TAG, "Vulkan available: ${vulkanInfo.deviceCount} device(s), " +
                     "${vulkanInfo.freeMemoryMB}MB free / ${vulkanInfo.totalMemoryMB}MB total")
         } else {
-            Log.w(TAG, "Vulkan not available - GPU acceleration disabled")
+            FileLogger.w(TAG, "Vulkan not available - GPU acceleration disabled")
         }
     }
 
@@ -61,27 +66,27 @@ class LLMEdgeExampleApp : Application() {
             else -> "UNKNOWN($level)"
         }
 
-        Log.i(TAG, "onTrimMemory: level=$levelName")
+        FileLogger.i(TAG, "onTrimMemory: level=$levelName")
         logMemoryState("Before memory cleanup")
 
         when (level) {
             TRIM_MEMORY_RUNNING_CRITICAL,
             TRIM_MEMORY_COMPLETE -> {
                 // Critical memory pressure - cancel any ongoing generation
-                Log.w(TAG, "Critical memory pressure - canceling generations")
+                FileLogger.w(TAG, "Critical memory pressure - canceling generations")
                 LLMEdgeManager.cancelGeneration()
             }
             TRIM_MEMORY_BACKGROUND,
             TRIM_MEMORY_MODERATE -> {
                 // App is backgrounded or moderate pressure - allow GC to run
-                Log.i(TAG, "Moderate memory pressure - allowing GC")
+                FileLogger.i(TAG, "Moderate memory pressure - allowing GC")
             }
         }
     }
 
     override fun onLowMemory() {
         super.onLowMemory()
-        Log.w(TAG, "onLowMemory - critical memory situation")
+        FileLogger.w(TAG, "onLowMemory - critical memory situation")
         logMemoryState("Low memory callback")
         
         // Cancel any active generations
@@ -103,14 +108,14 @@ class LLMEdgeExampleApp : Application() {
         val systemAvail = memoryInfo.availMem / BYTES_IN_MB
         val systemTotal = memoryInfo.totalMem / BYTES_IN_MB
 
-        Log.i(TAG, "=== Memory State: $phase ===")
-        Log.i(TAG, "  Heap: ${heapUsed}MB used / ${heapMax}MB max (${heapFree}MB free)")
-        Log.i(TAG, "  System: ${systemAvail}MB available / ${systemTotal}MB total")
-        Log.i(TAG, "  Low memory: ${memoryInfo.lowMemory}")
+        FileLogger.i(TAG, "=== Memory State: $phase ===")
+        FileLogger.i(TAG, "  Heap: ${heapUsed}MB used / ${heapMax}MB max (${heapFree}MB free)")
+        FileLogger.i(TAG, "  System: ${systemAvail}MB available / ${systemTotal}MB total")
+        FileLogger.i(TAG, "  Low memory: ${memoryInfo.lowMemory}")
         
         // Log Vulkan memory if available
         LLMEdgeManager.getVulkanDeviceInfo()?.let { vulkan ->
-            Log.i(TAG, "  Vulkan: ${vulkan.freeMemoryMB}MB free / ${vulkan.totalMemoryMB}MB total")
+            FileLogger.i(TAG, "  Vulkan: ${vulkan.freeMemoryMB}MB free / ${vulkan.totalMemoryMB}MB total")
         }
     }
     

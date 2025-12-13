@@ -21,6 +21,7 @@ public class SmolJavaExampleActivity extends AppCompatActivity {
 
     private SmolLM smol;
     private TextView tvOutput;
+    private byte[] savedState = null;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -63,9 +64,20 @@ public class SmolJavaExampleActivity extends AppCompatActivity {
                 new Thread(() -> {
                     try {
                         // Ensure model is loaded before calling getResponse
-                        // Note: maxTokens=-1 means use model default
                         final String answer = smol.getResponse("Say hello from llmedge (Java demo)", -1);
                         runOnUiThread(() -> tvOutput.append("\nResponse:\n" + answer));
+                        // Demonstrate KV-cache export/import
+                        try {
+                            final byte[] state = SmolLMJavaCompat.getStateBytes(smol);
+                            savedState = state;
+                            runOnUiThread(() -> tvOutput.append("\nSaved KV cache bytes: " + (state == null ? "null" : state.length)));
+                            // Clear cache then restore to demonstrate round-trip
+                            SmolLMJavaCompat.clearKvCache(smol);
+                            SmolLMJavaCompat.setStateBytes(smol, state);
+                            runOnUiThread(() -> tvOutput.append("\nKV cache cleared and restored."));
+                        } catch (Throwable t) {
+                            Log.w(TAG, "KV cache operations failed", t);
+                        }
                     } catch (Throwable t) {
                         Log.e(TAG, "Error getting response", t);
                         runOnUiThread(() -> tvOutput.append("\nError: " + t.getMessage()));

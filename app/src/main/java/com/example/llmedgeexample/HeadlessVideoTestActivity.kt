@@ -101,6 +101,10 @@ class HeadlessVideoTestActivity : Activity() {
                             cfgScale = cfgScale,
                             seed = seed,
                             flashAttn = true
+                        ,
+                        easyCache = io.aatricks.llmedge.StableDiffusion.EasyCacheParams(enabled = true),
+                        loraModelDir = null,
+                        loraApplyMode = io.aatricks.llmedge.StableDiffusion.LoraApplyMode.AUTO
                     )
 
             // 4. Generate with progress tracking
