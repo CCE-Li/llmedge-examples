@@ -62,23 +62,20 @@ This example application provides production-ready demonstrations of llmedge's c
 - Frame-by-frame progress monitoring
 - Demonstrates proper resource cleanup
 
-**Headless Video Testing** (`HeadlessVideoTestActivity.kt`)
-- Automated E2E testing infrastructure
-- Programmatic model validation
-- Performance benchmarking utilities
-- Command-line invocation support
-
 ### Speech Processing
 
-**Speech E2E Test** (`SpeechE2ETest.kt`)
-- Whisper STT model download and transcription
-- Bark TTS model download and loading
-- End-to-end speech synthesis pipeline testing
-- Audio sample generation and transcription verification
+**Speech-to-Text (STT)** (`STTActivity.kt`)
+- Whisper model download from Hugging Face
+- Audio recording and transcription
+- Real-time streaming transcription support
+- Timestamp and SRT generation
 
-**Status:**
-- ✅ **Whisper STT**: Fully functional on Android with tiny/base models
-- ⚠️ **Bark TTS**: Model loads successfully, but f16 inference is too slow for real-time use on mobile (10+ minutes vs 5 seconds on desktop)
+**Text-to-Speech (TTS)** (`TTSActivity.kt`)
+- Bark model download from Hugging Face via LLMEdgeManager
+- Text input for speech synthesis
+- Progress tracking during generation
+- Audio playback and WAV file saving
+- ARM-optimized native inference with OpenMP
 
 ## System Requirements
 
@@ -96,7 +93,7 @@ This example application provides production-ready demonstrations of llmedge's c
 
 ### Speech Model Requirements
 - **Whisper STT**: 75MB-500MB depending on model size (tiny to small)
-- **Bark TTS**: 843MB+ for f16 models (quantized not yet available)
+- **Bark TTS**: 843MB for f16 models
 
 ### Development Environment
 - Android SDK with NDK r27+
@@ -306,17 +303,17 @@ class LiveCaptionActivity : AppCompatActivity() {
 
 ### Text-to-Speech (Bark)
 
-> **Note:** Bark TTS with f16 models is very slow on mobile (~10+ minutes). Best suited for desktop/server use.
 
 ```kotlin
 import io.aatricks.llmedge.LLMEdgeManager
 
 CoroutineScope(Dispatchers.IO).launch {
-    // Generate speech
+    // Generate speech (model auto-downloads on first use)
     val audio = LLMEdgeManager.synthesizeSpeech(
         context = context,
         params = LLMEdgeManager.SpeechSynthesisParams(
-            text = "Hello, world!"
+            text = "Hello, world!",
+            nThreads = 8  // Use more threads for faster generation
         )
     ) { step, progress ->
         Log.d("Bark", "${step.name}: $progress%")
@@ -512,15 +509,6 @@ adb logcat -s SmolLM:* SmolSD:* | grep -i vulkan
 
 ### Speech Processing Issues
 
-**Symptoms**: Bark TTS taking 10+ minutes to generate audio
-
-**Explanation**: This is expected behavior with f16 models on mobile. Bark.cpp uses full-precision weights which are computationally intensive on ARM CPUs.
-
-**Workarounds**:
-- Use Bark for desktop/server batch processing only
-- Wait for quantized models in combined ggml format (not yet available)
-- For real-time TTS on mobile, consider alternative solutions
-
 **Symptoms**: Whisper transcription crashing or producing garbled output
 
 **Solutions**:
@@ -537,13 +525,6 @@ Run speech tests via adb:
 adb shell am instrument -w -e class com.example.llmedgeexample.SpeechE2ETest \
   com.example.llmedgeexample.test/androidx.test.runner.AndroidJUnitRunner
 ```
-
-**Test coverage:**
-- `testWhisperModelDownloadAndLoad` - Downloads and loads Whisper model ✅
-- `testWhisperTranscription` - Transcribes audio samples ✅
-- `testWhisperSystemInfo` - Validates model info ✅
-- `testBarkModelDownloadAndLoad` - Downloads and loads Bark model ✅
-- `testFullSpeechPipeline` - Skipped on mobile (too slow with f16)
 
 ### Headless E2E Testing
 
@@ -586,4 +567,4 @@ Apache 2.0 - See LICENSE file for details
 
 ## Contributing
 
-Contributions welcome. Please review the main repository's contributing guidelines before submitting pull requests.
+Contributions are welcome. Please review the main repository's contributing guidelines before submitting pull requests.
