@@ -14,8 +14,11 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import io.aatricks.llmedge.BarkTTS
-import io.aatricks.llmedge.huggingface.HuggingFaceHub
+import io.aatricks.llmedge.LLMEdgeManager
 import java.io.File
+import java.io.FileOutputStream
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -23,23 +26,22 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Activity demonstrating text-to-speech synthesis using Bark.
+ * Activity demonstrating text-to-speech synthesis using Bark via LLMEdgeManager.
  *
  * Features:
  * - Text input for speech synthesis
  * - Progress tracking during generation
  * - Audio playback of generated speech
  * - Save to WAV file
+ * - Automatic model download from Hugging Face
  *
- * Requirements:
- * - Bark model files (can be downloaded from Hugging Face)
+ * Note: Bark TTS with f16 models is slow on mobile (~6+ minutes for short phrases).
+ * This is expected due to the computational intensity of the model on ARM CPUs.
  */
 class TTSActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "TTSActivity"
-        private const val HUGGING_FACE_MODEL_ID = "PABannier/bark.cpp"
-        private const val MODEL_DIR = "bark_model"
     }
 
     private val statusLabel: TextView by lazy { findViewById(R.id.ttsStatusLabel) }
@@ -54,7 +56,6 @@ class TTSActivity : AppCompatActivity() {
     private val downloadButton: Button by lazy { findViewById(R.id.btnDownloadBarkModel) }
     private val timingLabel: TextView by lazy { findViewById(R.id.ttsTiming) }
 
-    private var barkTTS: BarkTTS? = null
     private var generationJob: Job? = null
     private var audioTrack: AudioTrack? = null
     private var lastAudioResult: BarkTTS.AudioResult? = null
@@ -64,14 +65,13 @@ class TTSActivity : AppCompatActivity() {
         setContentView(R.layout.activity_tts)
 
         setupButtons()
-        checkModelAvailability()
+        updateUIState()
     }
 
     override fun onDestroy() {
         super.onDestroy()
         stopPlayback()
-        barkTTS?.close()
-        barkTTS = null
+        // LLMEdgeManager handles model cleanup automatically
     }
 
     private fun setupButtons() {
@@ -86,20 +86,27 @@ class TTSActivity : AppCompatActivity() {
 
         playButton.setOnClickListener {
             lastAudioResult?.let { playAudio(it) }
-                    ?: Toast.makeText(this, "No audio generated yet", Toast.LENGTH_SHORT).show()
+                ?: Toast.makeText(this, "No audio generated yet", Toast.LENGTH_SHORT).show()
         }
 
         saveButton.setOnClickListener {
             lastAudioResult?.let { saveAudio(it) }
-                    ?: Toast.makeText(this, "No audio generated yet", Toast.LENGTH_SHORT).show()
+                ?: Toast.makeText(this, "No audio generated yet", Toast.LENGTH_SHORT).show()
         }
 
-        downloadButton.setOnClickListener { downloadModel() }
+        downloadButton.setOnClickListener { 
+            generateSpeech(textInput.text.toString().trim().ifEmpty { "Hello" }) 
+        }
+    }
 
-        // Initial button states
+    private fun updateUIState() {
+        // With LLMEdgeManager, model download happens automatically on first use
+        statusLabel.text = "Ready - model will download on first use (~800MB)"
+        downloadButton.text = "Generate (will download model)"
+        downloadButton.visibility = View.VISIBLE
+        generateButton.visibility = View.GONE
         playButton.isEnabled = false
         saveButton.isEnabled = false
-        generateButton.isEnabled = false
     }
 
     private fun log(message: String) {
@@ -109,138 +116,17 @@ class TTSActivity : AppCompatActivity() {
         }
     }
 
-    private fun checkModelAvailability() {
-        lifecycleScope.launch(Dispatchers.IO) {
-            val modelDir = File(filesDir, MODEL_DIR)
-            val vocabFile = File(modelDir, "ggml_vocab.bin")
-            val modelExists = modelDir.exists() && vocabFile.exists()
-
-            withContext(Dispatchers.Main) {
-                if (modelExists) {
-                    statusLabel.text = "Model ready: ${modelDir.name}"
-                    downloadButton.visibility = View.GONE
-                    loadModel(modelDir.absolutePath)
-                } else {
-                    statusLabel.text = "Model not found. Please download."
-                    downloadButton.visibility = View.VISIBLE
-                    generateButton.isEnabled = false
-                }
-            }
-        }
-    }
-
-    private fun downloadModel() {
-        downloadButton.isEnabled = false
-        progressBar.visibility = View.VISIBLE
-        progressBar.isIndeterminate = true
-        statusLabel.text = "Downloading model files..."
-
-        lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                val modelDir = File(filesDir, MODEL_DIR)
-                modelDir.mkdirs()
-
-                val modelFiles =
-                        listOf(
-                                "ggml_vocab.bin",
-                                "ggml_weights_text.bin",
-                                "ggml_weights_coarse.bin",
-                                "ggml_weights_fine.bin",
-                                "ggml_weights_codec.bin"
-                        )
-
-                var downloadedCount = 0
-                for (filename in modelFiles) {
-                    withContext(Dispatchers.Main) {
-                        statusLabel.text =
-                                "Downloading $filename (${downloadedCount + 1}/${modelFiles.size})..."
-                        progressBar.progress = (downloadedCount * 100) / modelFiles.size
-                    }
-
-                    val result =
-                            HuggingFaceHub.ensureModelOnDisk(
-                                    context = applicationContext,
-                                    modelId = HUGGING_FACE_MODEL_ID,
-                                    filename = filename
-                            )
-
-                    // Copy to model directory
-                    val destFile = File(modelDir, filename)
-                    if (!destFile.exists()) {
-                        result.file.copyTo(destFile)
-                    }
-
-                    downloadedCount++
-                    log("Downloaded: $filename")
-                }
-
-                withContext(Dispatchers.Main) {
-                    progressBar.visibility = View.GONE
-                    statusLabel.text = "Model downloaded successfully"
-                    downloadButton.visibility = View.GONE
-                    loadModel(modelDir.absolutePath)
-                }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    progressBar.visibility = View.GONE
-                    statusLabel.text = "Download failed: ${e.message}"
-                    downloadButton.isEnabled = true
-                    log("Error: ${e.message}")
-                }
-            }
-        }
-    }
-
-    private fun loadModel(modelPath: String) {
-        statusLabel.text = "Loading model..."
-        progressBar.visibility = View.VISIBLE
-        progressBar.isIndeterminate = true
-
-        lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                log("Loading Bark model from: $modelPath")
-                val startTime = System.currentTimeMillis()
-
-                barkTTS =
-                        BarkTTS.load(
-                                modelPath = modelPath,
-                                seed = 0, // Random seed
-                                temperature = 0.7f,
-                                fineTemperature = 0.5f,
-                                verbosity = 0
-                        )
-
-                val loadTime = System.currentTimeMillis() - startTime
-
-                withContext(Dispatchers.Main) {
-                    progressBar.visibility = View.GONE
-                    statusLabel.text = "Model loaded (${loadTime}ms)"
-                    generateButton.isEnabled = true
-                    log("Model loaded in ${loadTime}ms")
-                    log("Sample rate: ${barkTTS?.getSampleRate()}Hz")
-                }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    progressBar.visibility = View.GONE
-                    statusLabel.text = "Failed to load model: ${e.message}"
-                    log("Error loading model: ${e.message}")
-                }
-            }
-        }
-    }
-
     private fun generateSpeech(text: String) {
-        val bark =
-                barkTTS
-                        ?: run {
-                            Toast.makeText(this, "Model not loaded", Toast.LENGTH_SHORT).show()
-                            return
-                        }
+        if (text.isEmpty()) {
+            Toast.makeText(this, "Please enter some text", Toast.LENGTH_SHORT).show()
+            return
+        }
 
         // Cancel any existing generation
         generationJob?.cancel()
         stopPlayback()
 
+        downloadButton.isEnabled = false
         generateButton.isEnabled = false
         playButton.isEnabled = false
         saveButton.isEnabled = false
@@ -248,80 +134,89 @@ class TTSActivity : AppCompatActivity() {
         progressBar.progress = 0
         progressBar.isIndeterminate = false
         progressLabel.text = "Starting..."
+        statusLabel.text = "Generating speech..."
 
         log("Generating speech for: \"$text\"")
+        log("Note: First run will download ~800MB model from Hugging Face")
 
-        // Set progress callback
-        bark.setProgressCallback { step, progress ->
-            runOnUiThread {
-                val stepName =
-                        when (step) {
-                            BarkTTS.EncodingStep.SEMANTIC -> "Semantic"
-                            BarkTTS.EncodingStep.COARSE -> "Coarse"
-                            BarkTTS.EncodingStep.FINE -> "Fine"
-                        }
-                progressLabel.text = "$stepName: $progress%"
-                // Map total progress (3 steps, each 100%)
-                val totalProgress =
-                        when (step) {
-                            BarkTTS.EncodingStep.SEMANTIC -> progress / 3
-                            BarkTTS.EncodingStep.COARSE -> 33 + progress / 3
-                            BarkTTS.EncodingStep.FINE -> 66 + progress / 3
-                        }
-                progressBar.progress = totalProgress
-            }
-        }
+        generationJob = lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val startTime = System.currentTimeMillis()
 
-        generationJob =
-                lifecycleScope.launch(Dispatchers.IO) {
-                    try {
-                        val startTime = System.currentTimeMillis()
+                // Use LLMEdgeManager.SpeechSynthesisParams for configuration
+                val params = LLMEdgeManager.SpeechSynthesisParams(
+                    text = text,
+                    // Uses default model: Green-Sky/bark-ggml / bark-small_weights-f16.bin
+                    seed = 0,
+                    temperature = 0.7f,
+                    fineTemperature = 0.5f,
+                    nThreads = Runtime.getRuntime().availableProcessors()
+                )
 
-                        val result =
-                                bark.generate(
-                                        text = text,
-                                        params =
-                                                BarkTTS.GenerateParams(
-                                                        nThreads =
-                                                                Runtime.getRuntime()
-                                                                        .availableProcessors()
-                                                                        .coerceAtMost(4)
-                                                )
-                                )
-
-                        val genTime = System.currentTimeMillis() - startTime
-
-                        withContext(Dispatchers.Main) {
-                            lastAudioResult = result
-                            progressBar.visibility = View.GONE
-                            progressLabel.text = "Complete"
-                            generateButton.isEnabled = true
-                            playButton.isEnabled = true
-                            saveButton.isEnabled = true
-
-                            val timing =
-                                    "Generated ${result.samples.size} samples (${String.format("%.2f", result.durationSeconds)}s) in ${genTime}ms"
-                            timingLabel.text = timing
-                            log(timing)
-                            log(
-                                    "Real-time factor: ${String.format("%.2f", result.durationSeconds * 1000 / genTime)}x"
-                            )
-                        }
-                    } catch (e: CancellationException) {
-                        withContext(Dispatchers.Main) {
-                            progressBar.visibility = View.GONE
-                            generateButton.isEnabled = true
-                            log("Generation cancelled")
-                        }
-                    } catch (e: Exception) {
-                        withContext(Dispatchers.Main) {
-                            progressBar.visibility = View.GONE
-                            generateButton.isEnabled = true
-                            statusLabel.text = "Generation failed: ${e.message}"
-                            log("Error: ${e.message}")
+                // Use LLMEdgeManager.synthesizeSpeech for TTS (it's a singleton object)
+                val result = LLMEdgeManager.synthesizeSpeech(
+                    context = applicationContext,
+                    params = params,
+                    onProgress = { step: BarkTTS.EncodingStep, progress: Int ->
+                        runOnUiThread {
+                            val stepName = when (step) {
+                                BarkTTS.EncodingStep.SEMANTIC -> "Semantic"
+                                BarkTTS.EncodingStep.COARSE -> "Coarse"
+                                BarkTTS.EncodingStep.FINE -> "Fine"
+                            }
+                            progressLabel.text = "$stepName: $progress%"
+                            // Map total progress (3 steps, each 100%)
+                            val base = when (step) {
+                                BarkTTS.EncodingStep.SEMANTIC -> 0
+                                BarkTTS.EncodingStep.COARSE -> 33
+                                BarkTTS.EncodingStep.FINE -> 66
+                            }
+                            val totalProgress = base + (progress / 3)
+                            progressBar.progress = totalProgress
                         }
                     }
+                )
+
+                val genTime = System.currentTimeMillis() - startTime
+
+                withContext(Dispatchers.Main) {
+                    lastAudioResult = result
+                    progressBar.visibility = View.GONE
+                    progressLabel.text = "Complete"
+                    
+                    // Switch to generate button after first successful run
+                    downloadButton.visibility = View.GONE
+                    generateButton.visibility = View.VISIBLE
+                    generateButton.isEnabled = true
+                    
+                    playButton.isEnabled = true
+                    saveButton.isEnabled = true
+                    statusLabel.text = "Model ready"
+
+                    val timing = "Generated ${result.samples.size} samples " +
+                        "(${String.format("%.2f", result.durationSeconds)}s) in ${genTime / 1000L}s"
+                    timingLabel.text = timing
+                    log(timing)
+                    log("Real-time factor: ${String.format("%.4f", result.durationSeconds * 1000.0 / genTime)}x")
                 }
+            } catch (e: CancellationException) {
+                withContext(Dispatchers.Main) {
+                    progressBar.visibility = View.GONE
+                    downloadButton.isEnabled = true
+                    generateButton.isEnabled = true
+                    log("Generation cancelled")
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    progressBar.visibility = View.GONE
+                    downloadButton.isEnabled = true
+                    generateButton.isEnabled = true
+                    statusLabel.text = "Generation failed: ${e.message}"
+                    log("Error: ${e.message}")
+                    e.printStackTrace()
+                }
+            }
+        }
     }
 
     private fun playAudio(audio: BarkTTS.AudioResult) {
@@ -336,31 +231,29 @@ class TTSActivity : AppCompatActivity() {
             pcmData[i] = (sample * 32767).toInt().toShort()
         }
 
-        val bufferSize =
-                AudioTrack.getMinBufferSize(
-                        audio.sampleRate,
-                        AudioFormat.CHANNEL_OUT_MONO,
-                        AudioFormat.ENCODING_PCM_16BIT
-                )
+        val bufferSize = AudioTrack.getMinBufferSize(
+            audio.sampleRate,
+            AudioFormat.CHANNEL_OUT_MONO,
+            AudioFormat.ENCODING_PCM_16BIT
+        )
 
-        audioTrack =
-                AudioTrack.Builder()
-                        .setAudioAttributes(
-                                AudioAttributes.Builder()
-                                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                                        .build()
-                        )
-                        .setAudioFormat(
-                                AudioFormat.Builder()
-                                        .setSampleRate(audio.sampleRate)
-                                        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                                        .build()
-                        )
-                        .setBufferSizeInBytes(bufferSize.coerceAtLeast(pcmData.size * 2))
-                        .setTransferMode(AudioTrack.MODE_STATIC)
-                        .build()
+        audioTrack = AudioTrack.Builder()
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+            )
+            .setAudioFormat(
+                AudioFormat.Builder()
+                    .setSampleRate(audio.sampleRate)
+                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                    .build()
+            )
+            .setBufferSizeInBytes(bufferSize.coerceAtLeast(pcmData.size * 2))
+            .setTransferMode(AudioTrack.MODE_STATIC)
+            .build()
 
         audioTrack?.write(pcmData, 0, pcmData.size)
         audioTrack?.play()
@@ -382,33 +275,81 @@ class TTSActivity : AppCompatActivity() {
     private fun saveAudio(audio: BarkTTS.AudioResult) {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val outputFile =
-                        File(
-                                getExternalFilesDir(null),
-                                "bark_output_${System.currentTimeMillis()}.wav"
-                        )
-                barkTTS?.saveAsWav(audio, outputFile.absolutePath)
+                val outputFile = File(
+                    getExternalFilesDir(null),
+                    "bark_output_${System.currentTimeMillis()}.wav"
+                )
+                
+                // Write WAV file directly
+                saveAsWav(audio.samples, audio.sampleRate, outputFile.absolutePath)
 
                 withContext(Dispatchers.Main) {
                     log("Saved to: ${outputFile.name}")
                     Toast.makeText(
-                                    this@TTSActivity,
-                                    "Saved to ${outputFile.name}",
-                                    Toast.LENGTH_LONG
-                            )
-                            .show()
+                        this@TTSActivity,
+                        "Saved to ${outputFile.name}",
+                        Toast.LENGTH_LONG
+                    ).show()
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     log("Error saving: ${e.message}")
                     Toast.makeText(
-                                    this@TTSActivity,
-                                    "Failed to save: ${e.message}",
-                                    Toast.LENGTH_LONG
-                            )
-                            .show()
+                        this@TTSActivity,
+                        "Failed to save: ${e.message}",
+                        Toast.LENGTH_LONG
+                    ).show()
                 }
             }
         }
+    }
+
+    /** Save audio samples to a WAV file */
+    private fun saveAsWav(samples: FloatArray, sampleRate: Int, filePath: String) {
+        val file = File(filePath)
+        file.parentFile?.mkdirs()
+
+        FileOutputStream(file).use { fos ->
+            val wavHeader = createWavHeader(samples.size, sampleRate)
+            fos.write(wavHeader)
+
+            // Convert float samples to 16-bit PCM
+            val buffer = ByteBuffer.allocate(samples.size * 2).order(ByteOrder.LITTLE_ENDIAN)
+            for (sample in samples) {
+                val clamped = sample.coerceIn(-1.0f, 1.0f)
+                val pcm16 = (clamped * 32767.0f).toInt().toShort()
+                buffer.putShort(pcm16)
+            }
+            fos.write(buffer.array())
+        }
+    }
+
+    private fun createWavHeader(numSamples: Int, sampleRate: Int): ByteArray {
+        val byteRate = sampleRate * 2 // 16-bit mono
+        val dataSize = numSamples * 2
+        val fileSize = 36 + dataSize
+
+        val buffer = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN)
+
+        // RIFF header
+        buffer.put("RIFF".toByteArray())
+        buffer.putInt(fileSize)
+        buffer.put("WAVE".toByteArray())
+
+        // fmt subchunk
+        buffer.put("fmt ".toByteArray())
+        buffer.putInt(16) // Subchunk1Size (16 for PCM)
+        buffer.putShort(1) // AudioFormat (1 for PCM)
+        buffer.putShort(1) // NumChannels (1 for mono)
+        buffer.putInt(sampleRate) // SampleRate
+        buffer.putInt(byteRate) // ByteRate
+        buffer.putShort(2) // BlockAlign (2 for 16-bit mono)
+        buffer.putShort(16) // BitsPerSample
+
+        // data subchunk
+        buffer.put("data".toByteArray())
+        buffer.putInt(dataSize)
+
+        return buffer.array()
     }
 }
