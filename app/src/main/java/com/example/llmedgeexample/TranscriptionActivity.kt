@@ -140,13 +140,12 @@ class TranscriptionActivity : AppCompatActivity() {
 
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val hub = HuggingFaceHub()
-                val modelPath =
-                        hub.downloadFile(
-                                context = applicationContext,
-                                repoId = HUGGING_FACE_MODEL_ID,
-                                filename = DEFAULT_MODEL_FILE
-                        )
+                val result = HuggingFaceHub.ensureModelOnDisk(
+                    context = applicationContext,
+                    modelId = HUGGING_FACE_MODEL_ID,
+                    filename = DEFAULT_MODEL_FILE
+                )
+                val modelPath = result.file.absolutePath
 
                 withContext(Dispatchers.Main) {
                     statusLabel.text = "Model downloaded!"

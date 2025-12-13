@@ -63,7 +63,8 @@ public class SmolJavaExampleActivity extends AppCompatActivity {
                 new Thread(() -> {
                     try {
                         // Ensure model is loaded before calling getResponse
-                        final String answer = smol.getResponse("Say hello from llmedge (Java demo)");
+                        // Note: maxTokens=-1 means use model default
+                        final String answer = smol.getResponse("Say hello from llmedge (Java demo)", -1);
                         runOnUiThread(() -> tvOutput.append("\nResponse:\n" + answer));
                     } catch (Throwable t) {
                         Log.e(TAG, "Error getting response", t);

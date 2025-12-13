@@ -183,7 +183,7 @@ class VideoGenerationRealE2ETest {
                 steps = 10,
                 cfgScale = 7.0f,
                 seed = 42,
-                scheduler = StableDiffusion.Scheduler.EULER_A
+                sampleMethod = StableDiffusion.SampleMethod.EULER
             )
 
             logMemoryState("Before generation")
