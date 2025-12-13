@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <TextView
+            android:id="@+id/transcriptionHeading"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Whisper Speech-to-Text"
+            android:textColor="@android:color/black"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:paddingBottom="12dp" />
+
+        <TextView
+            android:id="@+id/transcriptionStatusLabel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Loading..."
+            android:textColor="@android:color/black"
+            android:paddingBottom="8dp" />
+
+        <Button
+            android:id="@+id/btnDownloadModel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Download Whisper Model"
+            android:visibility="gone" />
+
+        <ProgressBar
+            android:id="@+id/transcriptionProgressBar"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:max="100"
+            android:progress="0"
+            android:visibility="gone" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginTop="12dp">
+
+            <Button
+                android:id="@+id/btnStartRecording"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="🎤 Record"
+                android:textSize="16sp" />
+
+            <Button
+                android:id="@+id/btnStopRecording"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:text="⏹️ Stop"
+                android:textSize="16sp"
+                android:enabled="false" />
+
+            <Button
+                android:id="@+id/btnTranscribe"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:text="📝 Transcribe"
+                android:textSize="16sp"
+                android:enabled="false" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/detectedLanguageLabel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Detected language: -"
+            android:textColor="@android:color/darker_gray"
+            android:layout_marginTop="12dp"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/transcriptionLabel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Transcription:"
+            android:textColor="@android:color/black"
+            android:textStyle="bold"
+            android:layout_marginTop="16dp"
+            android:paddingBottom="8dp" />
+
+        <ScrollView
+            android:id="@+id/transcriptionScroll"
+            android:layout_width="match_parent"
+            android:layout_height="300dp"
+            android:background="@android:drawable/edit_text"
+            android:padding="12dp">
+
+            <TextView
+                android:id="@+id/transcriptionText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text=""
+                android:textColor="@android:color/black"
+                android:textSize="14sp"
+                android:lineSpacingExtra="4dp" />
+        </ScrollView>
+
+        <TextView
+            android:id="@+id/transcriptionHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Tip: Record audio first, then tap Transcribe. For best results, speak clearly and minimize background noise."
+            android:textColor="@android:color/darker_gray"
+            android:textSize="12sp"
+            android:layout_marginTop="12dp" />
+
+    </LinearLayout>
+</ScrollView>

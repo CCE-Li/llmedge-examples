@@ -76,5 +76,12 @@
             android:layout_marginTop="12dp"
             android:text="Image Generation" />
 
+        <Button
+            android:id="@+id/btnOpenTranscription"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="🎤 Speech-to-Text (Whisper)" />
+
     </LinearLayout>
 </ScrollView>
