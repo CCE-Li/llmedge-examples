@@ -64,6 +64,10 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, TranscriptionActivity::class.java))
         }
 
+        findViewById<Button>(R.id.btnOpenTTS).setOnClickListener {
+            startActivity(Intent(this, TTSActivity::class.java))
+        }
+
         // Display memory and device info
         updateMemoryInfo()
     }
