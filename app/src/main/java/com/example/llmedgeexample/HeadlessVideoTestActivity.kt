@@ -15,7 +15,7 @@ import kotlinx.coroutines.withContext
  * logs results, and exits.
  *
  * Usage: adb shell am start -n com.example.llmedgeexample/.HeadlessVideoTestActivity \ --es prompt
- * "a cat walking" \ --ei frames 8 \ --ei width 256 \ --ei height 256 \ --ei steps 10 \ --ef
+ * "a cat walking" \ --ei frames 8 \ --ei width 256 \ --ei height 256 \ --ei steps 20 \ --ef
  * cfg_scale 7.0 \ --el seed 42
  */
 class HeadlessVideoTestActivity : Activity() {
@@ -29,7 +29,7 @@ class HeadlessVideoTestActivity : Activity() {
         private const val DEFAULT_FRAMES = 8
         private const val DEFAULT_WIDTH = 256
         private const val DEFAULT_HEIGHT = 256
-        private const val DEFAULT_STEPS = 10
+        private const val DEFAULT_STEPS = 20
         private const val DEFAULT_CFG_SCALE = 7.0f
         private const val DEFAULT_SEED = 42L
     }
@@ -100,11 +100,13 @@ class HeadlessVideoTestActivity : Activity() {
                             steps = steps,
                             cfgScale = cfgScale,
                             seed = seed,
-                            flashAttn = true
-                        ,
-                        easyCache = io.aatricks.llmedge.StableDiffusion.EasyCacheParams(enabled = true),
-                        loraModelDir = null,
-                        loraApplyMode = io.aatricks.llmedge.StableDiffusion.LoraApplyMode.AUTO
+                            flashAttn = true,
+                            easyCache =
+                                    io.aatricks.llmedge.StableDiffusion.EasyCacheParams(
+                                            enabled = true
+                                    ),
+                            loraModelDir = null,
+                            loraApplyMode = io.aatricks.llmedge.StableDiffusion.LoraApplyMode.AUTO
                     )
 
             // 4. Generate with progress tracking

@@ -99,7 +99,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:hint="Steps (10-50)"
+                android:hint="Steps (1-50)"
                 android:inputType="number"
                 android:text="20"
                 android:background="@android:drawable/edit_text"
