@@ -237,6 +237,47 @@
                 android:visibility="gone" />
         </LinearLayout>
 
+        <!-- TAEHV Configuration -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="TAEHV (Optional, overrides VAE)"
+            android:textStyle="bold"
+            android:layout_marginTop="16dp"
+            android:textColor="@android:color/black" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginTop="4dp">
+
+            <Button
+                android:id="@+id/btnSelectTaehv"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Select TAEHV" />
+
+            <TextView
+                android:id="@+id/taehvLabel"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:text="No TAEHV selected"
+                android:textColor="@android:color/darker_gray"
+                android:ellipsize="middle"
+                android:singleLine="true" />
+
+            <Button
+                android:id="@+id/btnClearTaehv"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Clear"
+                android:visibility="gone" />
+        </LinearLayout>
+
         <!-- Image-to-Video (I2V) Configuration -->
         <TextView
             android:layout_width="match_parent"

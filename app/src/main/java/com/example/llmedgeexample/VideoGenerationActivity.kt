@@ -86,6 +86,12 @@ class VideoGenerationActivity : AppCompatActivity() {
             lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.loraLabel) }
     private val clearLoraButton: Button by
             lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.btnClearLora) }
+    private val selectTaehvButton: Button by
+            lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.btnSelectTaehv) }
+    private val taehvLabel: TextView by
+            lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.taehvLabel) }
+    private val clearTaehvButton: Button by
+            lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.btnClearTaehv) }
     private val generateButton: Button by
             lazy(LazyThreadSafetyMode.NONE) { findViewById(R.id.btnGenerateVideo) }
     private val cancelButton: Button by
@@ -122,6 +128,7 @@ class VideoGenerationActivity : AppCompatActivity() {
     private var initImageBitmap: Bitmap? = null
     private var generatedFrames: List<Bitmap> = emptyList()
     private var selectedLoraPath: String? = null
+    private var selectedTaehvPath: String? = null
 
     // Image picker result handler
     private val imagePickerLauncher =
@@ -136,6 +143,14 @@ class VideoGenerationActivity : AppCompatActivity() {
             registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
                 if (result.resultCode == Activity.RESULT_OK) {
                     result.data?.data?.let { uri -> loadLoraFile(uri) }
+                }
+            }
+
+    // TAEHV file picker result handler
+    private val taehvPickerLauncher =
+            registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+                if (result.resultCode == Activity.RESULT_OK) {
+                    result.data?.data?.let { uri -> loadTaehvFile(uri) }
                 }
             }
 
@@ -178,6 +193,8 @@ class VideoGenerationActivity : AppCompatActivity() {
         saveGifButton.setOnClickListener { saveAsGif() }
         selectLoraButton.setOnClickListener { selectLoraFile() }
         clearLoraButton.setOnClickListener { clearLoraFile() }
+        selectTaehvButton.setOnClickListener { selectTaehvFile() }
+        clearTaehvButton.setOnClickListener { clearTaehvFile() }
         shareLogsButton.setOnClickListener { shareLogs() }
 
         // Show log file path
@@ -415,6 +432,50 @@ class VideoGenerationActivity : AppCompatActivity() {
         clearLoraButton.visibility = View.GONE
     }
 
+    private fun selectTaehvFile() {
+        val intent =
+                Intent(Intent.ACTION_GET_CONTENT).apply {
+                    type = "*/*"
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/octet-stream", "*/*"))
+                }
+        taehvPickerLauncher.launch(Intent.createChooser(intent, "Select TAEHV (.safetensors)"))
+    }
+
+    private fun loadTaehvFile(uri: Uri) {
+        try {
+            // Copy the file to the app's cache directory for native access
+            val fileName =
+                    getFileNameFromUri(uri) ?: "taehv_${System.currentTimeMillis()}.safetensors"
+            if (!fileName.endsWith(".safetensors")) {
+                Toast.makeText(this, "Please select a .safetensors file", Toast.LENGTH_SHORT).show()
+                return
+            }
+
+            val taehvDir = java.io.File(cacheDir, "taehv")
+            taehvDir.mkdirs()
+            val taehvFile = java.io.File(taehvDir, fileName)
+
+            contentResolver.openInputStream(uri)?.use { inputStream ->
+                taehvFile.outputStream().use { outputStream -> inputStream.copyTo(outputStream) }
+            }
+
+            selectedTaehvPath = taehvFile.absolutePath
+            taehvLabel.text = fileName
+            clearTaehvButton.visibility = View.VISIBLE
+            FileLogger.i(TAG, "TAEHV loaded: $selectedTaehvPath")
+        } catch (e: Exception) {
+            FileLogger.e(TAG, "Failed to load TAEHV file", e)
+            Toast.makeText(this, "Failed to load TAEHV: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun clearTaehvFile() {
+        selectedTaehvPath = null
+        taehvLabel.text = "No TAEHV selected"
+        clearTaehvButton.visibility = View.GONE
+    }
+
     private fun startGeneration() {
         if (generationJob?.isActive == true) {
             Toast.makeText(this, R.string.video_status_generation_running, Toast.LENGTH_SHORT)
@@ -445,6 +506,7 @@ class VideoGenerationActivity : AppCompatActivity() {
 
         // Get LoRA path from file selector
         val loraDir = selectedLoraPath
+        val taehvPath = selectedTaehvPath
 
         // Get I2V strength
         val i2vStrength = i2vStrengthSeekBar.progress / 100.0f
@@ -465,6 +527,7 @@ class VideoGenerationActivity : AppCompatActivity() {
         FileLogger.i(TAG, "  CFG: $cfg, Seed: $seed, FlowShift: $flowShift")
         FileLogger.i(TAG, "  Sampler: $selectedSampleMethod, Scheduler: $selectedScheduler")
         FileLogger.i(TAG, "  LoRA: ${loraDir ?: "none"}")
+        FileLogger.i(TAG, "  TAEHV: ${taehvPath ?: "none"}")
         FileLogger.i(TAG, "  I2V: ${initImageBitmap != null}, Strength: $i2vStrength")
         FileLogger.i(TAG, "  Memory: isLowMem=$isLowMem, available=${availMemMB}MB")
 
@@ -550,6 +613,8 @@ class VideoGenerationActivity : AppCompatActivity() {
                                                         ?: getExternalFilesDir("loras")
                                                                 ?.absolutePath,
                                         loraApplyMode = StableDiffusion.LoraApplyMode.AUTO,
+                                        // TAEHV configuration
+                                        taehvPath = taehvPath,
                                         // Easy cache for performance
                                         easyCache =
                                                 StableDiffusion.EasyCacheParams(
@@ -601,7 +666,8 @@ class VideoGenerationActivity : AppCompatActivity() {
                                                         // LoRA and EasyCache
                                                         easyCache = params.easyCache,
                                                         loraModelDir = params.loraModelDir,
-                                                        loraApplyMode = params.loraApplyMode
+                                                        loraApplyMode = params.loraApplyMode,
+                                                        taehvPath = params.taehvPath
                                                 )
                                 ) { phase, current, total ->
                                     val status =
