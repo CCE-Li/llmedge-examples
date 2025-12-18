@@ -50,10 +50,10 @@ class VideoGenerationActivity : AppCompatActivity() {
         private const val DEFAULT_PROMPT = "A dog running in the park"
         private const val DEFAULT_WIDTH = 512
         private const val DEFAULT_HEIGHT = 512
-        private const val DEFAULT_STEPS = 20
-        private const val DEFAULT_CFG = 7.0f
+        private const val DEFAULT_STEPS = 30
+        private const val DEFAULT_CFG = 5.0f
         private const val DEFAULT_SEED = -1L
-        private const val DEFAULT_FRAMES = 8
+        private const val DEFAULT_FRAMES = 9
         private const val DEFAULT_FPS = 8
         private const val BYTES_IN_MB = 1024L * 1024L
     }
@@ -277,45 +277,32 @@ class VideoGenerationActivity : AppCompatActivity() {
                                 .format(java.util.Date())
 
                 withContext(Dispatchers.Main) {
-                    progressLabel.text = "Saving frames..."
+                    progressLabel.text = "Saving GIF..."
                     progressBar.visibility = View.VISIBLE
                     progressBar.isIndeterminate = true
                 }
 
-                // Save individual frames as PNG (GIF encoding requires updated AAR)
-                generatedFrames.forEachIndexed { index, frame ->
-                    val frameFile =
-                            java.io.File(
-                                    outputDir,
-                                    "video_${timestamp}_frame_${String.format("%03d", index)}.png"
-                            )
-                    java.io.FileOutputStream(frameFile).use { fos ->
-                        frame.compress(Bitmap.CompressFormat.PNG, 100, fos)
-                    }
+                val gifFile = java.io.File(outputDir, "video_${timestamp}.gif")
+                java.io.FileOutputStream(gifFile).use { fos ->
+                    io.aatricks.llmedge.vision.ImageUtils.createAnimatedGif(
+                            frames = generatedFrames,
+                            delayMs = 1000 / fps,
+                            output = fos,
+                            loop = 0
+                    )
                 }
-
-                // Also save a simple info file for ffmpeg conversion
-                val infoFile = java.io.File(outputDir, "video_${timestamp}_info.txt")
-                infoFile.writeText(
-                        """
-                    |Video frames saved: ${generatedFrames.size}
-                    |FPS: $fps
-                    |To create GIF with ffmpeg:
-                    |ffmpeg -framerate $fps -i video_${timestamp}_frame_%03d.png -loop 0 video_${timestamp}.gif
-                """.trimMargin()
-                )
 
                 withContext(Dispatchers.Main) {
                     progressBar.visibility = View.GONE
                     Toast.makeText(
                                     applicationContext,
-                                    "Saved ${generatedFrames.size} frames to: ${outputDir.absolutePath}",
+                                    "Saved GIF to: ${gifFile.absolutePath}",
                                     Toast.LENGTH_LONG
                             )
                             .show()
                 }
 
-                FileLogger.i(TAG, "Frames saved to: ${outputDir.absolutePath}")
+                FileLogger.i(TAG, "GIF saved to: ${gifFile.absolutePath}")
             } catch (e: Exception) {
                 FileLogger.e(TAG, "Failed to save frames", e)
                 withContext(Dispatchers.Main) {
@@ -727,13 +714,17 @@ class VideoGenerationActivity : AppCompatActivity() {
                         )
                     } catch (t: Throwable) {
                         FileLogger.e(TAG, "Failed during generation", t)
-                        updateProgressUI(
-                                0,
-                                getString(
-                                        R.string.video_status_failed,
-                                        t.localizedMessage ?: "error"
-                                )
-                        )
+                        val message = t.localizedMessage ?: "error"
+                        val finalMessage =
+                                if (message.contains(
+                                                "Failed to initialize Stable Diffusion context"
+                                        ) && selectedTaehvPath != null
+                                ) {
+                                    "$message\n\nTip: You selected a custom TAEHV. Ensure it is compatible with Wan2.1 (e.g. taew2_1.safetensors). Incompatible TAEHVs (like SDXL's) will cause this error."
+                                } else {
+                                    message
+                                }
+                        updateProgressUI(0, getString(R.string.video_status_failed, finalMessage))
                     } finally {
                         withContext(Dispatchers.Main) {
                             progressBar.visibility = View.GONE
