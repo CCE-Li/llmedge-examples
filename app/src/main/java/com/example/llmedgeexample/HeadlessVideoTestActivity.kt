@@ -16,7 +16,8 @@ import kotlinx.coroutines.withContext
  *
  * Usage: adb shell am start -n com.example.llmedgeexample/.HeadlessVideoTestActivity \ --es prompt
  * "a cat walking" \ --ei frames 8 \ --ei width 256 \ --ei height 256 \ --ei steps 20 \ --ef
- * cfg_scale 7.0 \ --el seed 42
+ * cfg_scale 7.0 \ --el seed 42 \ --es taehv_path /sdcard/Download/taew2_1.safetensors \ --ez
+ * force_sequential false \ --ez prefer_performance_mode true
  */
 class HeadlessVideoTestActivity : Activity() {
 
@@ -52,6 +53,11 @@ class HeadlessVideoTestActivity : Activity() {
         val steps = intent.getIntExtra("steps", DEFAULT_STEPS)
         val cfgScale = intent.getFloatExtra("cfg_scale", DEFAULT_CFG_SCALE)
         val seed = intent.getLongExtra("seed", DEFAULT_SEED)
+        val taehvPath = intent.getStringExtra("taehv_path")
+        val forceSequential = intent.getBooleanExtra("force_sequential", false)
+        val preferPerformanceMode = intent.getBooleanExtra("prefer_performance_mode", false)
+
+        io.aatricks.llmedge.LLMEdgeManager.preferPerformanceMode = preferPerformanceMode
 
         android.util.Log.e(TAG, "Parameters:")
         android.util.Log.e(TAG, "  Prompt: $prompt")
@@ -60,11 +66,24 @@ class HeadlessVideoTestActivity : Activity() {
         android.util.Log.e(TAG, "  Steps: $steps")
         android.util.Log.e(TAG, "  CFG Scale: $cfgScale")
         android.util.Log.e(TAG, "  Seed: $seed")
+        android.util.Log.e(TAG, "  TAEHV path: ${taehvPath ?: "(none)"}")
+        android.util.Log.e(TAG, "  force_sequential: $forceSequential")
+        android.util.Log.e(TAG, "  prefer_performance_mode: $preferPerformanceMode")
         android.util.Log.e(TAG, "")
 
         // Start generation (don't finish until complete)
         scope.launch {
-            runTest(prompt, frames, width, height, steps, cfgScale, seed)
+            runTest(
+                    prompt,
+                    frames,
+                    width,
+                    height,
+                    steps,
+                    cfgScale,
+                    seed,
+                    taehvPath,
+                    forceSequential
+            )
             // Finish activity after test completes
             withContext(Dispatchers.Main) { finish() }
         }
@@ -83,7 +102,9 @@ class HeadlessVideoTestActivity : Activity() {
             height: Int,
             steps: Int,
             cfgScale: Float,
-            seed: Long
+            seed: Long,
+            taehvPath: String?,
+            forceSequential: Boolean
     ) {
         val startTime = System.currentTimeMillis()
 
@@ -101,6 +122,8 @@ class HeadlessVideoTestActivity : Activity() {
                             cfgScale = cfgScale,
                             seed = seed,
                             flashAttn = true,
+                            forceSequentialLoad = forceSequential,
+                            taehvPath = taehvPath,
                             easyCache =
                                     io.aatricks.llmedge.StableDiffusion.EasyCacheParams(
                                             enabled = true
