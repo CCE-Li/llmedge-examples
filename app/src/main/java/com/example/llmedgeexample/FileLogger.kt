@@ -25,8 +25,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 object FileLogger {
     private const val TAG = "FileLogger"
     private const val LOG_DIR = "logs"
-    private const val MAX_LOG_FILES = 5
-    private const val MAX_LOG_SIZE_BYTES = 5 * 1024 * 1024 // 5MB per file
+    private const val MAX_LOG_FILES = 20
+    private const val MAX_LOG_SIZE_BYTES = 10 * 1024 * 1024 // 10MB per file
     
     private var logFile: File? = null
     private var logDir: File? = null
@@ -66,6 +66,14 @@ object FileLogger {
                 appendLine()
             }
             logFile?.writeText(header)
+            
+            // Setup uncaught exception handler to flush logs on crash
+            val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
+            Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+                e(TAG, "FATAL EXCEPTION in thread ${thread.name}", throwable)
+                flush()
+                defaultHandler?.uncaughtException(thread, throwable)
+            }
             
             // Cleanup old log files
             cleanupOldLogs()
@@ -142,6 +150,10 @@ object FileLogger {
         
         logQueue.offer(logLine)
         flushAsync()
+        // For debugging, also flush immediately if it's an error
+        if (level == "E" || level == "W") {
+            flush()
+        }
     }
     
     private fun flushAsync() {
