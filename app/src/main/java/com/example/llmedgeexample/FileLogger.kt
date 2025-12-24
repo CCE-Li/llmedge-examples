@@ -1,26 +1,19 @@
 package com.example.llmedgeexample
 
+import android.app.ActivityManager
 import android.content.Context
 import android.util.Log
 import java.io.File
 import java.io.FileOutputStream
-import java.io.PrintWriter
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.util.concurrent.ConcurrentLinkedQueue
-import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * File-based logger for users without access to logcat.
  * 
- * Logs are written to: /storage/emulated/0/Android/data/com.example.llmedgeexample/files/logs/
- * 
- * Usage:
- *   FileLogger.init(context)
- *   FileLogger.i("TAG", "message")
- *   FileLogger.e("TAG", "error", exception)
+ * Logs are written synchronously to ensure they survive crashes.
  */
 object FileLogger {
     private const val TAG = "FileLogger"
@@ -33,11 +26,6 @@ object FileLogger {
     private val initialized = AtomicBoolean(false)
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
     private val fileNameFormat = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US)
-    
-    // Async writing to avoid blocking UI thread
-    private val logQueue = ConcurrentLinkedQueue<String>()
-    private val executor = Executors.newSingleThreadExecutor()
-    private val isWriting = AtomicBoolean(false)
     
     /**
      * Initialize the file logger. Call this in Application.onCreate()
@@ -70,8 +58,15 @@ object FileLogger {
             // Setup uncaught exception handler to flush logs on crash
             val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
             Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
-                e(TAG, "FATAL EXCEPTION in thread ${thread.name}", throwable)
-                flush()
+                // Log final memory state before dying
+                val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+                if (am != null) {
+                    val mi = ActivityManager.MemoryInfo()
+                    am.getMemoryInfo(mi)
+                    e(TAG, "FATAL EXCEPTION in thread ${thread.name}. Memory: Avail=${mi.availMem/1024/1024}MB, Low=${mi.lowMemory}", throwable)
+                } else {
+                    e(TAG, "FATAL EXCEPTION in thread ${thread.name}", throwable)
+                }
                 defaultHandler?.uncaughtException(thread, throwable)
             }
             
@@ -135,6 +130,7 @@ object FileLogger {
         Log.v(tag, message)
     }
     
+    @Synchronized
     private fun log(level: String, tag: String, message: String, throwable: Throwable? = null) {
         if (!initialized.get()) return
         
@@ -148,58 +144,42 @@ object FileLogger {
             appendLine()
         }
         
-        logQueue.offer(logLine)
-        flushAsync()
-        // For debugging, also flush immediately if it's an error
-        if (level == "E" || level == "W") {
-            flush()
-        }
-    }
-    
-    private fun flushAsync() {
-        if (isWriting.getAndSet(true)) return
-        
-        executor.execute {
-            try {
-                val file = logFile ?: return@execute
-                
-                // Check if we need to rotate
-                if (file.length() > MAX_LOG_SIZE_BYTES) {
-                    rotateLog()
-                }
-                
-                FileOutputStream(file, true).bufferedWriter().use { writer ->
-                    while (true) {
-                        val line = logQueue.poll() ?: break
-                        writer.write(line)
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to write log", e)
-            } finally {
-                isWriting.set(false)
-                // If more logs came in while writing, flush again
-                if (!logQueue.isEmpty()) {
-                    flushAsync()
+        try {
+            val file = logFile ?: return
+            
+            // Check if we need to rotate (best effort)
+            if (file.length() > MAX_LOG_SIZE_BYTES) {
+                val newTimestamp = fileNameFormat.format(Date())
+                logFile = File(logDir, "llmedge_$newTimestamp.log")
+                logFile?.writeText("Log rotated at $timestamp\n")
+            }
+            
+            FileOutputStream(logFile, true).use { fos ->
+                fos.write(logLine.toByteArray())
+                fos.flush()
+                // Force sync to hardware to ensure data survives native crash
+                try {
+                    fos.fd.sync()
+                } catch (e: Exception) {
+                    // ignore sync errors on some devices
                 }
             }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to write log", e)
         }
     }
     
-    private fun rotateLog() {
-        try {
-            val timestamp = fileNameFormat.format(Date())
-            logFile = File(logDir, "llmedge_$timestamp.log")
-            cleanupOldLogs()
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to rotate log", e)
-        }
+    /**
+     * Force flush pending logs. No-op since we write synchronously.
+     */
+    fun flush() {
+        // Already synchronous
     }
     
     private fun cleanupOldLogs() {
         try {
-            val files = logDir?.listFiles { file -> file.name.endsWith(".log") }
-                ?.sortedByDescending { it.lastModified() }
+            val files = logDir?.listFiles { file -> file.name.endsWith(".log") } 
+                ?.sortedByDescending { it.lastModified() } 
                 ?: return
             
             // Keep only the most recent files
@@ -209,23 +189,6 @@ object FileLogger {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to cleanup old logs", e)
-        }
-    }
-    
-    /**
-     * Force flush all pending logs (call before app exit or crash).
-     */
-    fun flush() {
-        try {
-            val file = logFile ?: return
-            FileOutputStream(file, true).bufferedWriter().use { writer ->
-                while (true) {
-                    val line = logQueue.poll() ?: break
-                    writer.write(line)
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to flush log", e)
         }
     }
     
