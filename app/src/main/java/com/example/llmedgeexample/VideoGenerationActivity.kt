@@ -527,9 +527,7 @@ class VideoGenerationActivity : AppCompatActivity() {
                     .show()
         }
 
-        updateProgressUI(0, getString(R.string.video_status_loading_model))
-        progressBar.visibility = View.VISIBLE
-        progressBar.isIndeterminate = true
+        updateProgressUI(0, "Preparing parameters...")
         generateButton.isEnabled = false
 
         // Use Dispatchers.IO for native JNI operations - it has more threads for blocking
@@ -541,9 +539,12 @@ class VideoGenerationActivity : AppCompatActivity() {
                         val prompt = promptInput.text.toString().ifBlank { DEFAULT_PROMPT }
 
                         // Log memory before generation
+                        FileLogger.i(TAG, "Logging memory state before generation...")
                         logMemoryState("Before video generation")
+                        FileLogger.i(TAG, "Memory state logged.")
 
                         // Prepare init image bytes if I2V mode
+                        FileLogger.i(TAG, "Preparing init image (if any)...")
                         var initImageBytes: ByteArray? = null
                         var initWidth = 0
                         var initHeight = 0
@@ -576,9 +577,11 @@ class VideoGenerationActivity : AppCompatActivity() {
                             initHeight = scaledBmp.height
                             if (scaledBmp !== bmp) scaledBmp.recycle()
                         }
+                        FileLogger.i(TAG, "Init image preparation done. hasInitImage=${initImageBytes != null}")
 
                         // Use sequential loading on low-memory devices (auto-detected)
                         // Width must be between 256-960 for Wan 2.1
+                        FileLogger.i(TAG, "Constructing VideoGenerationParams...")
                         val params =
                                 LLMEdgeManager.VideoGenerationParams(
                                         prompt = prompt,
@@ -611,6 +614,7 @@ class VideoGenerationActivity : AppCompatActivity() {
                                                         endPercent = 0.95f
                                                 )
                                 )
+                        FileLogger.i(TAG, "VideoGenerationParams constructed.")
 
                         // Note: I2V (Image-to-Video) is now supported!
                         val hasInitImage = initImageBytes != null && initWidth > 0 && initHeight > 0
@@ -622,6 +626,7 @@ class VideoGenerationActivity : AppCompatActivity() {
                         }
 
                         updateProgressUI(0, "Preparing model...")
+                        FileLogger.i(TAG, "Calling LLMEdgeManager.generateVideo...")
 
                         val frames =
                                 LLMEdgeManager.generateVideo(
@@ -661,6 +666,7 @@ class VideoGenerationActivity : AppCompatActivity() {
                                             if (total > 0) "$phase ($current/$total)" else phase
                                     updateProgressUI(0, status)
                                 }
+                        FileLogger.i(TAG, "LLMEdgeManager.generateVideo returned ${frames.size} frames.")
 
                         // Log memory after generation
                         logMemoryState("After video generation")
