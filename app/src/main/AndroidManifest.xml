@@ -9,6 +9,7 @@
         android:allowBackup="true"
         android:supportsRtl="true"
         android:theme="@style/AppTheme"
+        android:largeHeap="true"
     >
         <!-- FileProvider for sharing camera temp files with camera app -->
         <provider
