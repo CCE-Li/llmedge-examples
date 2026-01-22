@@ -56,3 +56,22 @@ build/
 gradle/
 local.properties
 .DS_Store
+
+# 构建产物（扩展）
+app/build/
+build/
+app/libs/*.so
+app/libs/*.jar
+# 依赖缓存
+.gradle/
+.idea/
+# 大文件目录（根据实际项目调整，比如 data/、models/ 等）
+data/
+models/
+*.bin
+*.pth
+*.ckpt
+# 其他大文件类型
+*.zip
+*.tar.gz
+*.iso
