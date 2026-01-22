@@ -42,3 +42,17 @@ local.properties
 ktlint
 ktlint.bat
 app/build
+
+# Android 构建产物
+app/build/
+build/
+*.apk
+*.ap_
+*.aab
+*.dex
+*.class
+# 其他临时文件（可选）
+.gradle/
+gradle/
+local.properties
+.DS_Store
