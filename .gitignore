@@ -42,6 +42,7 @@ local.properties
 ktlint
 ktlint.bat
 app/build
+.windsurf
 
 # Android 构建产物
 app/build/
