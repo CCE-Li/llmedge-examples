@@ -1,0 +1,32 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+# Find dependencies
+if(@ENABLE_VULKAN@)
+    find_dependency(Vulkan REQUIRED)
+endif()
+
+# Include our targets
+include("${CMAKE_CURRENT_LIST_DIR}/llmedge-examples-targets.cmake")
+
+# Set variables for users
+set(LLMEDGE_EXAMPLES_VERSION @PROJECT_VERSION@)
+set(LLMEDGE_EXAMPLES_VULKAN_ENABLED @VULKAN_ENABLED@)
+
+# Check that the requested components were found
+check_required_components(llmedge-examples)
+
+# Provide usage information
+if(NOT TARGET llmedge::llmedge-examples)
+    message(FATAL_ERROR "llmedge-examples target not found")
+endif()
+
+# Helper function to check Vulkan availability
+function(llmedge_has_vulkan_support RESULT)
+    if(@VULKAN_ENABLED@)
+        set(${RESULT} TRUE PARENT_SCOPE)
+    else()
+        set(${RESULT} FALSE PARENT_SCOPE)
+    endif()
+endfunction()

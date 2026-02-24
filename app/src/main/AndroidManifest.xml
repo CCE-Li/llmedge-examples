@@ -69,5 +69,8 @@
             android:name=".TranscriptionActivity"
             android:exported="false"
             android:screenOrientation="portrait" />
+        <activity
+            android:name=".TTSActivity"
+            android:exported="false" />
     </application>
 </manifest>
