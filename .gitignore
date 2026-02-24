@@ -75,3 +75,4 @@ models/
 *.zip
 *.tar.gz
 *.iso
+*.gguf
